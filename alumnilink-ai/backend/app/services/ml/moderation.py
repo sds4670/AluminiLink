@@ -1,27 +1,70 @@
-from typing import Dict, Any
+SPAM_KEYWORDS = [
+    "click here", "buy now", "free money",
+    "guaranteed", "winner", "congratulations you",
+    "limited offer", "act now", "make money fast"
+]
 
-BLOCKED_KEYWORDS = ["spam", "scam", "offensive_placeholder"]
 
-
-def moderate_post(content: str) -> Dict[str, Any]:
+def moderate_post(content: str) -> dict:
     """
-    STUB: Moderate post content for policy violations.
-    Real implementation would use an LLM or content moderation API.
-    Returns a dict with score and decision.
+    4-layer moderation pipeline, evaluated in order:
+      1. length check       -> hard reject
+      2. spam keyword check -> hard reject
+      3. toxicity check     -> hard reject if toxicity > 0.7
+      4. admin review       -> flagged for manual review if 0.4 < toxicity <= 0.7
     """
+    scores = {}
+
+    # Layer 1 — length check
+    word_count = len(content.split())
+    if word_count < 5:
+        return {
+            "approved": False,
+            "layer_failed": "length_check",
+            "toxicity_score": 0.0,
+            "reason": "Post too short — minimum 5 words"
+        }
+
+    # Layer 2 — spam keyword check
     content_lower = content.lower()
-    flagged = any(kw in content_lower for kw in BLOCKED_KEYWORDS)
-    score = 0.95 if not flagged else 0.2
+    spam_hits = sum(1 for k in SPAM_KEYWORDS if k in content_lower)
+    if spam_hits >= 2:
+        return {
+            "approved": False,
+            "layer_failed": "spam_check",
+            "toxicity_score": 0.0,
+            "reason": "Post flagged as spam"
+        }
+
+    # Layer 3 — toxicity detection (Detoxify)
+    # Lazy import to avoid startup crash if the model/weights aren't available.
+    try:
+        from detoxify import Detoxify
+        results = Detoxify("original").predict(content)
+        toxicity = results["toxicity"]
+    except Exception:
+        toxicity = 0.0
+
+    if toxicity > 0.7:
+        return {
+            "approved": False,
+            "layer_failed": "toxicity_check",
+            "toxicity_score": round(toxicity, 3),
+            "reason": "Post contains toxic content"
+        }
+
+    # Layer 4 — admin review for borderline
+    if toxicity > 0.4:
+        return {
+            "approved": False,
+            "layer_failed": "admin_review",
+            "toxicity_score": round(toxicity, 3),
+            "reason": "Post flagged for admin review"
+        }
 
     return {
-        "score": score,
-        "decision": "rejected" if flagged else "approved",
-        "reasons": ["blocked keyword detected"] if flagged else [],
-        "auto_actioned": True,
+        "approved": True,
+        "layer_failed": None,
+        "toxicity_score": round(toxicity, 3),
+        "reason": None
     }
-
-
-def is_safe_content(content: str) -> bool:
-    """STUB: Quick safety check for content."""
-    result = moderate_post(content)
-    return result["decision"] == "approved"

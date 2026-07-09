@@ -22,3 +22,12 @@ huggingface-hub==0.16.4
 transformers==4.30.2
 tokenizers==0.13.3
 safetensors==0.3.3
+# detoxify==0.5.1 intentionally omitted — it hard-pins transformers==4.22.1,
+# which conflicts with the pin above, and its own tokenizers dependency has no
+# prebuilt wheel for this Python/OS combination (source build needs a newer
+# rustc than Debian trixie ships). services/ml/moderation.py already lazy-
+# imports detoxify and falls back to toxicity=0.0 when it's unavailable, so
+# the moderation pipeline still runs correctly — layers 1-2 (length/spam) are
+# fully enforced; layers 3-4 (toxicity) are inert until this is revisited
+# with a compatible pinned environment (e.g. a separate venv/container with
+# transformers==4.22.1, or upgrading detoxify past its 2021-era pins).

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import ForeignKey, DateTime, Enum as SAEnum, Text, func
+from sqlalchemy import ForeignKey, DateTime, Enum as SAEnum, Text, String, Float, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -21,6 +21,8 @@ class PostModerationLog(Base):
     post_id: Mapped[int] = mapped_column(ForeignKey("posts.id", ondelete="CASCADE"), nullable=False)
     moderator_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     action: Mapped[ModerationAction] = mapped_column(SAEnum(ModerationAction), nullable=False)
+    layer_failed: Mapped[Optional[str]] = mapped_column(String(50))
+    toxicity_score: Mapped[Optional[float]] = mapped_column(Float)
     reason: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

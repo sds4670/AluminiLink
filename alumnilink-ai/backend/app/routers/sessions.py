@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
 from app.database import get_db
-from app.core.dependencies import require_student, require_alumni
+from app.core.dependencies import require_student, require_alumni, require_student_or_alumni
 from app.core.redis_client import clear_window_ttl
 from app.models.user import User
 from app.models.student_profile import StudentProfile
@@ -14,6 +14,7 @@ from app.models.connection_request import ConnectionRequest
 from app.models.availability_slot import AvailabilitySlot, SlotStatus
 from app.models.session import Session, SessionStatus
 from app.models.session_feedback import SessionFeedback, FeedbackRole
+from app.models.audit_log import AuditLog
 from app.schemas.session import (
     SessionBookRequest,
     SessionResponse,
@@ -147,6 +148,42 @@ async def get_my_sessions(
     ]
 
 
+@router.patch("/{session_id}/complete", response_model=SessionResponse)
+async def complete_session(
+    session_id: int,
+    current_user: User = Depends(require_alumni),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    curl -X PATCH http://localhost:8000/api/v1/sessions/1/complete \\
+      -H "Authorization: Bearer <alumni access_token>"
+    """
+    alumni_result = await db.execute(select(AlumniProfile).where(AlumniProfile.user_id == current_user.id))
+    alumni = alumni_result.scalar_one_or_none()
+    if not alumni:
+        raise HTTPException(status_code=400, detail="Alumni profile not found")
+
+    result = await db.execute(
+        select(Session).where(Session.id == session_id, Session.alumni_id == alumni.id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status != SessionStatus.scheduled:
+        raise HTTPException(status_code=400, detail="Only scheduled sessions can be marked completed")
+
+    session.status = SessionStatus.completed
+    db.add(AuditLog(
+        actor_id=current_user.id,
+        action="session_completed",
+        resource_type="sessions",
+        resource_id=session_id,
+    ))
+    await db.flush()
+    await db.refresh(session)
+    return session
+
+
 @router.get("/incoming", response_model=List[IncomingSessionResponse])
 async def get_incoming_sessions(
     current_user: User = Depends(require_alumni),
@@ -200,6 +237,15 @@ async def submit_feedback(
     if session.status != SessionStatus.completed:
         raise HTTPException(status_code=400, detail="Feedback can only be left on completed sessions")
 
+    existing = await db.execute(
+        select(SessionFeedback).where(
+            SessionFeedback.session_id == session_id,
+            SessionFeedback.reviewer_id == current_user.id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Feedback already submitted for this session")
+
     if not (1 <= data.rating <= 5):
         raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
 
@@ -214,3 +260,29 @@ async def submit_feedback(
     await db.flush()
     await db.refresh(feedback)
     return feedback
+
+
+@router.get("/{session_id}/feedback", response_model=List[SessionFeedbackResponse])
+async def get_session_feedback(
+    session_id: int,
+    current_user: User = Depends(require_student_or_alumni),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Session).where(Session.id == session_id))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Only the two participants in this session may view its feedback.
+    student_result = await db.execute(select(StudentProfile).where(StudentProfile.id == session.student_id))
+    alumni_result = await db.execute(select(AlumniProfile).where(AlumniProfile.id == session.alumni_id))
+    student = student_result.scalar_one_or_none()
+    alumni = alumni_result.scalar_one_or_none()
+    participant_user_ids = {uid for uid in [student and student.user_id, alumni and alumni.user_id] if uid}
+    if current_user.id not in participant_user_ids:
+        raise HTTPException(status_code=403, detail="Not a participant in this session")
+
+    feedback_result = await db.execute(
+        select(SessionFeedback).where(SessionFeedback.session_id == session_id)
+    )
+    return feedback_result.scalars().all()

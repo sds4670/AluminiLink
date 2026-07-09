@@ -20,9 +20,9 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     task_routes={
-        "app.workers.tasks.run_post_moderation": {"queue": "moderation"},
         "app.workers.tasks.screen_alumni_profile_task": {"queue": "screening"},
         "app.workers.tasks.expire_window": {"queue": "windows"},
+        "app.workers.tasks.send_session_reminder": {"queue": "reminders"},
     },
 )
 

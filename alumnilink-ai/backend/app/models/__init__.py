@@ -9,8 +9,10 @@ from app.models.connection_window import ConnectionWindow, WindowStatus
 from app.models.session import Session, SessionStatus
 from app.models.session_feedback import SessionFeedback, FeedbackRole
 from app.models.match_score import MatchScore
-from app.models.post import Post, PostStatus
+from app.models.post import Post, PostType, ModerationStatus
 from app.models.post_moderation_log import PostModerationLog, ModerationAction
+from app.models.post_like import PostLike
+from app.models.post_comment import PostComment
 from app.models.audit_log import AuditLog
 
 __all__ = [
@@ -25,7 +27,9 @@ __all__ = [
     "Session", "SessionStatus",
     "SessionFeedback", "FeedbackRole",
     "MatchScore",
-    "Post", "PostStatus",
+    "Post", "PostType", "ModerationStatus",
     "PostModerationLog", "ModerationAction",
+    "PostLike",
+    "PostComment",
     "AuditLog",
 ]

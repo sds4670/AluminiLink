@@ -2,7 +2,7 @@
 
 This file explains, in plain language: what's been built so far (day by day), and exactly how the database works right now — what's real, what's seeded, and what's hardcoded.
 
-Last updated: 2026-07-09
+Last updated: 2026-07-10
 
 ---
 
@@ -39,6 +39,31 @@ This was the big one:
 - Whitelist tables were re-seeded a few times with your specific roster (real names instead of "Seed Student N" placeholders) for `2024DS001`–`2024DS020` and `REG2014DS01`–`REG2014DS10`.
 - **CORS false alarm, real bug found**: registration was throwing an unhandled 500 that *looked* like a CORS error in the browser (Starlette drops CORS headers on unhandled exceptions). The actual cause: a whitelist row's `is_registered` flag had drifted out of sync with the real `users` table, so the duplicate-roll-number check didn't trigger and the request crashed on a raw database constraint instead. Fixed the data (reconciled all whitelist rows against real users) and hardened `register_user()` so a database integrity error is now always caught and turned into a clean `409`, never a raw crash.
 
+### Day 4 — Module 3 (AI Outreach Screening) + Module 4 (48hr Window + Session Booking)
+This redesigned how a student goes from "found an alumnus" to "booked a real session":
+- **Module 3**: before a student can send a connection request, their message is scored on 4 dimensions (intent, professional tone, personalisation, length) by `screen_message()` — a pure keyword/heuristic function, no ML model. Score ≥ 0.6 required to submit. `POST /api/v1/screener/check` lets the frontend preview the score before submitting. The request itself stores its `screening_score`.
+- **Module 4**: when an alumnus accepts a request, a `connection_window` is created with a real 48-hour expiry. The student must book one of the alumnus's open `availability_slots` within that window or it expires automatically. Booking uses a Postgres row lock (`SELECT ... FOR UPDATE`) so two simultaneous booking attempts on the same slot can't both succeed — proven under a genuine concurrency test (two parallel requests: one `201`, one `409`).
+- **Redesigned `connection_windows`**: previously modeled as a "bulk window an alumnus opens for many students" (unused, from the Day 1 scaffold). Replaced with a 1:1 "created when this specific request is accepted" model: `student_id`, `alumni_id`, `expires_at`, `status` (`active`/`booked`/`expired`).
+- **Real Redis TTL + expiry**: accepting a request sets a `window:{id}` Redis key with a 48h TTL. A background listener in the FastAPI process (`app.main`'s lifespan) subscribes to Redis's key-expiry pub/sub channel and dispatches a Celery task (`expire_window`) when a window's time runs out without a booking — verified end-to-end with a short-TTL test key rather than waiting 48 hours.
+
+**Bugs found and fixed along the way:**
+- The Celery worker container only ever consumed the default `celery` queue; tasks routed to `moderation`/`screening`/`windows` queues would silently never run. Fixed by explicitly listing all queues in `docker-compose.yml`'s worker command (`-Q celery,screening,windows,...`) — a class of bug worth remembering, since it fails silently rather than erroring.
+- `reject_request` mutated a row's `status` then returned it without `db.refresh()` — the `onupdate=func.now()`-generated `updated_at` value triggered a `MissingGreenlet` crash during response serialization. Also worth remembering: a `500` that the browser reports as a **CORS** error almost always means the real bug is server-side (Starlette drops CORS headers on unhandled-exception responses) — check the backend traceback first.
+
+### Day 4 (continued) — Module 5 (Community Feed + Moderation) + Session Lifecycle Completion
+- **Session lifecycle gap closed**: `PATCH /api/v1/sessions/{id}/complete` (alumni-only, logs to `audit_logs`) now exists, making the feedback flow actually reachable end-to-end: book → alumni marks complete → student leaves a 1–5 star rating (duplicate-feedback and wrong-status both guarded) → either participant can `GET` the feedback.
+- **Module 5**: a community feed with 7 post types (internship/job/event/resource/query/announcement/general) and a 4-layer moderation pipeline (`moderate_post()`): length check → spam-keyword check → toxicity check → borderline-toxicity admin review. Posts, likes (toggle), and comments (also moderated) all live under `/api/v1/feed/...`. An admin moderation queue (`/api/v1/admin/moderation/queue`) handles the borderline cases layer 4 flags.
+- New tables: `post_likes`, `post_comments` (both with real FKs to `posts`/`users`, `post_likes` has a unique `(post_id, user_id)` constraint so "toggle" is enforced at the DB level too, not just in application code).
+- `posts.status` was renamed to `moderation_status` and the enum values changed (`pending_review`/`approved`/`rejected`) to match the new pipeline's vocabulary.
+
+**A dependency decision worth understanding — `detoxify` is NOT installed:**
+The spec asked for `detoxify==0.5.1` to power the toxicity-detection layer. After six separate rebuild attempts, this proved to be a genuine, unresolvable environment conflict, not a mistake to fix:
+- `detoxify==0.5.1` hard-pins `transformers==4.22.1` exactly, which conflicts with the `transformers==4.30.2` this project already needed for `sentence-transformers` (Module 2's SBERT matching).
+- Downgrading to satisfy detoxify then breaks on `tokenizers`: the version old-enough-for-4.22.1 has no prebuilt wheel for this Python/OS combination, forcing a from-source build.
+- That source build needs a newer Rust compiler than Debian's `rustc` package provides (needs 1.86–1.88, Debian ships 1.85).
+
+Rather than keep burning time chasing 2021-era pinned dependencies, the code leans on the fallback `moderate_post()` already had built in: `try: from detoxify import Detoxify ... except Exception: toxicity = 0.0`. **Practical effect**: layers 1–2 (length, spam keywords) fully work today; layers 3–4 (toxicity detection, admin-review flagging) are currently inert — nothing gets auto-rejected or flagged for toxicity, only for being too short or spammy. Revisit this if real toxicity filtering becomes a priority (e.g. a dedicated container/venv pinned to `transformers==4.22.1` just for this one function, or swapping to a newer toxicity library without detoxify's stale pins).
+
 ---
 
 ## 2. Is the database "hardcoded"? — short answer: no, it's seeded
@@ -58,7 +83,7 @@ This *is* intentionally hardcoded, but not the accounts themselves — it's the 
 
 ## 3. Full database schema (as it exists right now)
 
-14 tables total. Grouped by what they're for.
+16 tables total. Grouped by what they're for.
 
 ### 3.1 Identity & access control
 
@@ -118,7 +143,7 @@ This *is* intentionally hardcoded, but not the accounts themselves — it's the 
 
 > Important API nuance: everywhere in the *API* (matching results, connection requests, public profile lookup), "alumni_id"/"user_id" that the frontend deals with is the **`users.id`**, not the `alumni_profiles.id`. The routers internally translate between the two. Only inside `availability_slots`, `connection_requests`, `sessions`, and `match_scores` does the raw `alumni_profiles.id` / `student_profiles.id` show up (as foreign keys).
 
-### 3.3 Availability & booking (Module 9 + future session booking)
+### 3.3 Availability, connection requests & session booking (Modules 3, 4, 9)
 
 **`availability_slots`**
 | Column | Type | Notes |
@@ -130,19 +155,39 @@ This *is* intentionally hardcoded, but not the accounts themselves — it's the 
 | `status` | enum `slotstatus` | current code only ever writes `open` or `booked`. The enum type in Postgres *also* still contains the old `available`/`cancelled` values from an earlier design (added, never removed) — they simply go unused. |
 | `created_at` | timestamp | |
 
-**`connection_windows`** — a bulk time-window an alumnus opens for requests (separate, older mechanism from a different module, not part of what we built this session — pre-existed in the Day 1 scaffold).
-
-**`connection_requests`** — a student's request to connect with an alumnus.
+**`connection_requests`** — a student's request to connect with an alumnus, screened before it can even be created.
 | Column | Type | Notes |
 |---|---|---|
 | `student_id` / `alumni_id` | FK → `student_profiles.id` / `alumni_profiles.id` | |
-| `window_id` | FK → `connection_windows.id`, nullable | |
+| `window_id` | FK → `connection_windows.id`, nullable | set once the alumnus accepts (see below) |
 | `status` | enum `requeststatus` | `pending`/`accepted`/`rejected`/`withdrawn`/`expired` |
-| `message` / `rejection_reason` | text | |
+| `message` | text | must score ≥ 0.6 on `screen_message()` (Module 3) to be created at all |
+| `screening_score` | float, nullable | the score that got it approved |
+| `rejection_reason` | text | |
 
-**`sessions`** — a scheduled 1:1 mentoring session (booking logic itself isn't built yet — this table exists from Day 1 scaffold, referenced by `availability_slots.id` via `slot_id`, but nothing currently sets `slot.status = booked` automatically).
+**`connection_windows`** — **redesigned in Module 4.** Previously an alumnus-opened "bulk window" that many students could apply into (unused, Day 1 scaffold leftover). Now created 1:1 the moment an alumnus accepts a specific request, giving the student a real 48-hour deadline to book a slot.
+| Column | Type | Notes |
+|---|---|---|
+| `student_id` / `alumni_id` | FK → `student_profiles.id` / `alumni_profiles.id` | |
+| `expires_at` | timestamp | set to `now() + 48h` on creation |
+| `status` | enum `windowstatus` | `active` / `booked` / `expired` |
 
-**`session_feedbacks`** — post-session rating (1–5) left by either party.
+A matching Redis key `window:{id}` is set with a real 48h TTL at creation time. If the student books in time, the key is deleted and `status` becomes `booked`. If it expires first, a Redis pub/sub → Celery bridge (see `app.main`'s lifespan + `expire_window` task) flips `status` to `expired` and expires the linked request too.
+
+**`sessions`** — a scheduled 1:1 mentoring session, created by `POST /api/v1/sessions/book`.
+| Column | Type | Notes |
+|---|---|---|
+| `student_id` / `alumni_id` | FK → `student_profiles.id` / `alumni_profiles.id` | |
+| `slot_id` | FK → `availability_slots.id`, nullable | |
+| `request_id` | FK → `connection_requests.id`, nullable | |
+| `window_id` | FK → `connection_windows.id`, nullable | **added in Module 4** |
+| `scheduled_at` | timestamp | combined from the slot's date + start time |
+| `status` | enum `sessionstatus` | `scheduled` → `completed` (via `PATCH /sessions/{id}/complete`, alumni-only) → feedback becomes leaveable |
+| `duration_minutes` | int | computed from the slot's start/end time |
+
+Booking uses `SELECT ... FOR UPDATE` on the slot row so two simultaneous booking attempts on the same slot can't both succeed (proven under real concurrency: one request gets `201`, the other a clean `409`).
+
+**`session_feedbacks`** — post-session rating (1–5) left by the student; one per session (a duplicate attempt returns `400`). Either participant can read it back via `GET /sessions/{id}/feedback`.
 
 ### 3.4 Matching (Module 2)
 
@@ -157,11 +202,28 @@ This *is* intentionally hardcoded, but not the accounts themselves — it's the 
 
 Rows here are an **upsert cache**: `GET /api/v1/matching/alumni` recomputes and overwrites the row for every alumnus the student is compared against, every time it's called.
 
-### 3.5 Content & moderation (Feed module — pre-existing, not touched this session)
-**`posts`**, **`post_moderation_logs`** — a student/alumni feed with (stubbed) auto-moderation.
+### 3.5 Content & moderation (Module 5)
+
+**`posts`** — a student/alumni community post, run through the 4-layer `moderate_post()` pipeline on creation.
+| Column | Type | Notes |
+|---|---|---|
+| `author_id` | FK → `users.id` | |
+| `post_type` | enum `posttype` | `internship`/`job`/`event`/`resource`/`query`/`announcement`/`general` |
+| `content` | text | |
+| `moderation_status` | enum `moderationstatus` | `pending_review`/`approved`/`rejected` — **renamed from `status`**, values changed to match the pipeline |
+| `toxicity_score` | float, nullable | from the pipeline's toxicity layer (currently always `0.0` — see the `detoxify` note in the Day 4 log above) |
+| `is_pinned` | boolean | |
+
+Only `moderation_status = approved` posts are ever returned by the public feed endpoints. `pending_review` posts sit in the admin moderation queue; `rejected` posts are kept (for the audit trail) but never shown to anyone.
+
+**`post_moderation_logs`** — one row per moderation *decision* (auto-reject, admin-approve, admin-reject), recording `layer_failed`, `toxicity_score`, and `reason`.
+
+**`post_likes`** *(new)* — one row per (post, user) like. A unique constraint on `(post_id, user_id)` means "toggle" is enforced by the database, not just the API.
+
+**`post_comments`** *(new)* — comments on a post; also run through `moderate_post()` before being saved.
 
 ### 3.6 Admin
-**`audit_logs`** — records admin actions (`approve_alumni`, `reject_alumni`, `ban_user`, etc.) with who did it and when.
+**`audit_logs`** — records admin/system actions (`approve_alumni`, `reject_alumni`, `ban_user`, `expire_window`, `session_completed`, etc.) with who did it and when. `actor_id` is `NULL` for system-triggered entries like `expire_window` (nobody clicked a button — the Redis TTL fired).
 
 ---
 
@@ -174,12 +236,11 @@ Rows here are an **upsert cache**: `GET /api/v1/matching/alumni` recomputes and 
 | `allowed_alumni` | 10 | `REG2014DS01`–`REG2014DS10`, all 10 claimed by the seeded alumni |
 | `student_profiles` | 10 | the 10 seeded students, each with a real SBERT embedding |
 | `alumni_profiles` | 10 | the 10 seeded alumni, each with a real SBERT embedding |
-| `availability_slots` | 1 | one leftover slot from testing (status `booked`) |
 | `match_scores` | 100 | every seeded-student × seeded-alumni pair (10×10), real cosine similarities |
-| `audit_logs` | 2 | one alumni approval + one alumni rejection, both done during testing |
-| `connection_requests`, `connection_windows`, `sessions`, `session_feedbacks`, `posts`, `post_moderation_logs` | 0 | untouched — no module has exercised these yet in a way that left data behind |
+| `audit_logs` | 4 | admin approve/reject of an alumni account (Day 3) + a `session_completed` and `expire_window` entry from Module 3/4/5 endpoint verification |
+| `availability_slots`, `connection_requests`, `connection_windows`, `sessions`, `session_feedbacks`, `posts`, `post_moderation_logs`, `post_likes`, `post_comments` | 0 | cleared after each round of endpoint testing — everything that was created during verification (test posts, test bookings, test feedback) was deliberately truncated afterward so the database only reflects the intentional seed set |
 
-If you want a completely clean slate for a demo, the two extra accounts (`test@christuniversity.in`, `meera@christuniversity.in`) and the one leftover slot are the only things not part of the intentional seed set.
+Test verification data is cleared after each session by design (per your request during Day 4 cleanup) — the only non-seed rows that persist are the 2 real accounts you registered yourself while testing the frontend, and the 4 audit log entries (audit logs are meant to be a permanent record, so they're never truncated).
 
 ---
 

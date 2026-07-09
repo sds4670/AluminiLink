@@ -79,6 +79,7 @@ app.include_router(sessions.router)
 app.include_router(availability.router)
 app.include_router(feed.router)
 app.include_router(admin.router)
+app.include_router(admin.moderation_router)
 app.include_router(screener.router)
 
 
