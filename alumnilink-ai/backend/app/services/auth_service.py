@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException, status
 from app.config import settings
 from app.models.user import User, UserRole, UserStatus, VerificationStatus
@@ -61,7 +62,17 @@ async def register_user(data: RegisterRequest, db: AsyncSession) -> TokenRespons
         register_number=data.register_number if data.role == UserRole.alumni else None,
     )
     db.add(user)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # The whitelist check above can go stale under concurrent requests or
+        # manual data edits; never let a raw DB constraint violation surface
+        # as an unhandled 500 (which also strips CORS headers on the response).
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="This email or whitelist number is already registered",
+        )
 
     allowed.is_registered = True
     allowed.registered_user_id = user.id
