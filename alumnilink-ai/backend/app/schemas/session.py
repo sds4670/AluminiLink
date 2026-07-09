@@ -1,8 +1,36 @@
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date, time
 from app.models.session import SessionStatus
 from app.models.session_feedback import FeedbackRole
+
+
+class SessionBookRequest(BaseModel):
+    window_id: int
+    slot_id: int
+
+
+class MySessionResponse(BaseModel):
+    """A student's view of one of their sessions."""
+    id: int
+    alumni_user_id: int
+    alumni_name: Optional[str] = None
+    slot_date: date
+    start_time: time
+    end_time: time
+    status: SessionStatus
+    has_feedback: bool = False
+
+
+class IncomingSessionResponse(BaseModel):
+    """An alumnus's view of a session where they are the mentor."""
+    id: int
+    student_user_id: int
+    student_name: Optional[str] = None
+    slot_date: date
+    start_time: time
+    end_time: time
+    status: SessionStatus
 
 
 class SessionResponse(BaseModel):
@@ -11,6 +39,7 @@ class SessionResponse(BaseModel):
     alumni_id: int
     slot_id: Optional[int]
     request_id: Optional[int]
+    window_id: Optional[int]
     scheduled_at: datetime
     duration_minutes: int
     meeting_link: Optional[str]

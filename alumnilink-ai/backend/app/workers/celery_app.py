@@ -1,5 +1,9 @@
+import logging
+import redis
 from celery import Celery
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 celery_app = Celery(
     "alumnilink",
@@ -18,5 +22,15 @@ celery_app.conf.update(
     task_routes={
         "app.workers.tasks.run_post_moderation": {"queue": "moderation"},
         "app.workers.tasks.screen_alumni_profile_task": {"queue": "screening"},
+        "app.workers.tasks.expire_window": {"queue": "windows"},
     },
 )
+
+# Enable keyspace notifications for key-expiry events ("Ex") so the
+# Redis pub/sub bridge in app.main can react when a `window:{id}` TTL key
+# expires and dispatch the expire_window task above.
+try:
+    redis_client = redis.Redis.from_url(settings.redis_url)
+    redis_client.config_set("notify-keyspace-events", "Ex")
+except Exception as exc:
+    logger.warning("Could not enable Redis keyspace notifications: %s", exc)

@@ -8,12 +8,12 @@ export default function AlumniDashboard() {
 
   useEffect(() => {
     Promise.all([
-      api.get("/api/requests/mine").catch(() => ({ data: [] })),
-      api.get("/api/sessions/mine").catch(() => ({ data: [] })),
+      api.get("/api/v1/requests/incoming").catch(() => ({ data: [] })),
+      api.get("/api/v1/sessions/incoming").catch(() => ({ data: [] })),
       api.get("/api/v1/availability/my").catch(() => ({ data: [] })),
     ]).then(([reqRes, sesRes, slotRes]) => {
       setStats({
-        requests: reqRes.data.filter((r) => r.status === "pending").length,
+        requests: reqRes.data.length,
         sessions: sesRes.data.length,
         slots: slotRes.data.length,
       });

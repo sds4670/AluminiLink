@@ -7,8 +7,8 @@ export default function MyStudents() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get("/api/requests/mine")
-      .then((res) => setRequests(res.data.filter((r) => r.status === "accepted")))
+    api.get("/api/v1/requests/incoming", { params: { status: "accepted" } })
+      .then((res) => setRequests(res.data))
       .finally(() => setLoading(false));
   }, []);
 
@@ -21,8 +21,8 @@ export default function MyStudents() {
         <div className="space-y-3">
           {requests.map((r) => (
             <div key={r.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-              <p className="text-sm font-medium text-gray-900">Student #{r.student_id}</p>
-              <p className="text-xs text-gray-400 mt-0.5">Request #{r.id} · Accepted</p>
+              <p className="text-sm font-medium text-gray-900">{r.student_name}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{r.department} · Accepted</p>
             </div>
           ))}
         </div>

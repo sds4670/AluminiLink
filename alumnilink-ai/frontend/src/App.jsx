@@ -52,7 +52,7 @@ export default function App() {
         <Route path="/student/alumni/:id" element={<ProtectedRoute allowedRoles={["student"]}><AlumniProfile /></ProtectedRoute>} />
         <Route path="/student/request/:alumniId" element={<ProtectedRoute allowedRoles={["student"]}><SendRequest /></ProtectedRoute>} />
         <Route path="/student/requests" element={<ProtectedRoute allowedRoles={["student"]}><MyRequests /></ProtectedRoute>} />
-        <Route path="/student/window" element={<ProtectedRoute allowedRoles={["student"]}><ActiveWindow /></ProtectedRoute>} />
+        <Route path="/student/window/:windowId" element={<ProtectedRoute allowedRoles={["student"]}><ActiveWindow /></ProtectedRoute>} />
         <Route path="/student/sessions" element={<ProtectedRoute allowedRoles={["student"]}><StudentSessions /></ProtectedRoute>} />
         <Route path="/student/feed" element={<ProtectedRoute allowedRoles={["student"]}><StudentFeed /></ProtectedRoute>} />
 

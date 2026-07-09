@@ -8,8 +8,8 @@ export default function StudentDashboard() {
 
   useEffect(() => {
     Promise.all([
-      api.get("/api/requests/mine").catch(() => ({ data: [] })),
-      api.get("/api/sessions/mine").catch(() => ({ data: [] })),
+      api.get("/api/v1/requests/my").catch(() => ({ data: [] })),
+      api.get("/api/v1/sessions/my").catch(() => ({ data: [] })),
     ]).then(([reqRes, sesRes]) => {
       setStats({ requests: reqRes.data.length, sessions: sesRes.data.length });
     });

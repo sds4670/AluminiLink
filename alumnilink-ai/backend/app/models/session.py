@@ -21,6 +21,7 @@ class Session(Base):
     alumni_id: Mapped[int] = mapped_column(ForeignKey("alumni_profiles.id", ondelete="CASCADE"), nullable=False)
     slot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("availability_slots.id", ondelete="SET NULL"))
     request_id: Mapped[Optional[int]] = mapped_column(ForeignKey("connection_requests.id", ondelete="SET NULL"))
+    window_id: Mapped[Optional[int]] = mapped_column(ForeignKey("connection_windows.id", ondelete="SET NULL"))
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     duration_minutes: Mapped[int] = mapped_column(default=30)
     meeting_link: Mapped[Optional[str]] = mapped_column(String(500))
@@ -33,4 +34,5 @@ class Session(Base):
     alumni: Mapped["AlumniProfile"] = relationship(back_populates="sessions")  # noqa: F821
     slot: Mapped[Optional["AvailabilitySlot"]] = relationship(back_populates="session")  # noqa: F821
     request: Mapped[Optional["ConnectionRequest"]] = relationship(back_populates="session")  # noqa: F821
+    window: Mapped[Optional["ConnectionWindow"]] = relationship(back_populates="sessions")  # noqa: F821
     feedbacks: Mapped[list["SessionFeedback"]] = relationship(back_populates="session")  # noqa: F821

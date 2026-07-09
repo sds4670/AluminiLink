@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import ForeignKey, DateTime, Enum as SAEnum, Text, func
+from sqlalchemy import ForeignKey, DateTime, Enum as SAEnum, Text, Float, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -23,6 +23,7 @@ class ConnectionRequest(Base):
     window_id: Mapped[Optional[int]] = mapped_column(ForeignKey("connection_windows.id", ondelete="SET NULL"))
     status: Mapped[RequestStatus] = mapped_column(SAEnum(RequestStatus), default=RequestStatus.pending)
     message: Mapped[Optional[str]] = mapped_column(Text)
+    screening_score: Mapped[Optional[float]] = mapped_column(Float)
     rejection_reason: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

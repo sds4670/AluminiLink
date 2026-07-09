@@ -50,3 +50,46 @@ def screen_alumni_profile_task(self, alumni_id: int):
             await db.commit()
 
     asyncio.run(_run())
+
+
+@celery_app.task(name="app.workers.tasks.expire_window", bind=True)
+def expire_window(self, window_id: int):
+    """
+    Fired by the Redis keyspace-notification bridge (see app.main's lifespan)
+    when a `window:{id}` TTL key expires — i.e. the student never booked a
+    slot within the 48-hour window.
+    """
+    async def _run():
+        from sqlalchemy import select
+        from app.models.connection_window import ConnectionWindow, WindowStatus
+        from app.models.connection_request import ConnectionRequest, RequestStatus
+        from app.models.audit_log import AuditLog
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(ConnectionWindow).where(ConnectionWindow.id == window_id))
+            window = result.scalar_one_or_none()
+            # Already booked (or already expired) in the meantime — nothing to do.
+            # No slot needs "freeing": slots are only ever touched at actual booking
+            # time (POST /sessions/book), never reserved just for having an active window.
+            if not window or window.status != WindowStatus.active:
+                return
+
+            window.status = WindowStatus.expired
+
+            req_result = await db.execute(
+                select(ConnectionRequest).where(ConnectionRequest.window_id == window_id)
+            )
+            req = req_result.scalar_one_or_none()
+            if req:
+                req.status = RequestStatus.expired
+
+            db.add(AuditLog(
+                actor_id=None,
+                action="expire_window",
+                resource_type="connection_window",
+                resource_id=window_id,
+                details="48-hour booking window expired without a session being booked",
+            ))
+            await db.commit()
+
+    asyncio.run(_run())
