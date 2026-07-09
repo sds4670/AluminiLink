@@ -1,0 +1,15 @@
+# run this in your project root
+cat >> .gitignore << 'EOF'
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+.env
+node_modules/
+.venv/
+*.egg-info/
+.DS_Store
+EOF
+
+git add .gitignore
+git commit -m "Add gitignore - exclude pycache and env files"
+git push -u origin master

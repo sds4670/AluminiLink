@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/v1/matching", tags=["matching"])
 async def _get_own_student_profile(current_user: User, db: AsyncSession) -> StudentProfile:
     result = await db.execute(select(StudentProfile).where(StudentProfile.user_id == current_user.id))
     student = result.scalar_one_or_none()
-    if not student or not student.embedding:
+    if student is None or student.embedding is None:
         raise HTTPException(status_code=400, detail="Complete your profile first")
     return student
 
@@ -66,7 +66,7 @@ async def get_match_score(
 
     alumni_result = await db.execute(select(AlumniProfile).where(AlumniProfile.user_id == alumni_user_id))
     alumni = alumni_result.scalar_one_or_none()
-    if not alumni or not alumni.embedding:
+    if alumni is None or alumni.embedding is None:
         raise HTTPException(status_code=404, detail="Alumni profile not found")
 
     score_result = await db.execute(

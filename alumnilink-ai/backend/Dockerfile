@@ -8,7 +8,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# CPU-only torch wheel (~200MB) instead of the default CUDA build (~750MB+) —
+# this backend has no GPU, and the smaller download is far less prone to
+# timing out on constrained network connections.
+RUN pip install --no-cache-dir --prefer-binary --timeout 180 --retries 10 \
+    torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir --prefer-binary --timeout 180 --retries 10 \
+    -r requirements.txt
 
 COPY . .
 

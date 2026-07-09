@@ -57,13 +57,15 @@ async def _seed_students(db) -> list[StudentProfile]:
             db.add(user)
             await db.flush()
 
-            whitelist_result = await db.execute(
-                select(AllowedStudent).where(AllowedStudent.roll_number == row["roll_number"])
-            )
-            allowed = whitelist_result.scalar_one_or_none()
-            if allowed:
-                allowed.is_registered = True
-                allowed.registered_user_id = user.id
+        # Re-link on every run (not just on first creation) so re-seeding the
+        # whitelist after it's been reset doesn't orphan an existing user's slot.
+        whitelist_result = await db.execute(
+            select(AllowedStudent).where(AllowedStudent.roll_number == row["roll_number"])
+        )
+        allowed = whitelist_result.scalar_one_or_none()
+        if allowed:
+            allowed.is_registered = True
+            allowed.registered_user_id = user.id
 
         profile_result = await db.execute(select(StudentProfile).where(StudentProfile.user_id == user.id))
         profile = profile_result.scalar_one_or_none()
@@ -108,13 +110,15 @@ async def _seed_alumni(db) -> list[AlumniProfile]:
             db.add(user)
             await db.flush()
 
-            whitelist_result = await db.execute(
-                select(AllowedAlumni).where(AllowedAlumni.register_number == row["register_number"])
-            )
-            allowed = whitelist_result.scalar_one_or_none()
-            if allowed:
-                allowed.is_registered = True
-                allowed.registered_user_id = user.id
+        # Re-link on every run (not just on first creation) so re-seeding the
+        # whitelist after it's been reset doesn't orphan an existing user's slot.
+        whitelist_result = await db.execute(
+            select(AllowedAlumni).where(AllowedAlumni.register_number == row["register_number"])
+        )
+        allowed = whitelist_result.scalar_one_or_none()
+        if allowed:
+            allowed.is_registered = True
+            allowed.registered_user_id = user.id
 
         profile_result = await db.execute(select(AlumniProfile).where(AlumniProfile.user_id == user.id))
         profile = profile_result.scalar_one_or_none()
@@ -150,10 +154,10 @@ async def seed() -> None:
 
         pair_count = 0
         for student in students:
-            if not student.embedding:
+            if student.embedding is None:
                 continue
             for alum in alumni:
-                if not alum.embedding:
+                if alum.embedding is None:
                     continue
                 from app.services.ml.embeddings import cosine_similarity
                 sim = cosine_similarity(student.embedding, alum.embedding)
