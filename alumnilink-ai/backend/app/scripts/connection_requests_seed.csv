@@ -1,0 +1,31 @@
+ref,student_roll_number,alumni_register_number,message,screening_score,outcome
+R01,2024DS001,REG2014DS01,"Hi Neha, I'm a final-year Data Science student building a recommender system for my capstone and would love 20 minutes of your time to learn how you approach large-scale recommendation systems at Google.",0.82,PASS
+R02,2024DS002,REG2014DS02,"Hello Suresh, I'm a Data Science student interested in fintech analytics. I'd really appreciate your perspective on how risk analytics teams use SQL and Tableau day to day at Deutsche Bank.",0.78,PASS
+R03,2024DS003,REG2014DS03,"Hi Lakshmi, I'm exploring NLP research and have been reading about transformer architectures. Would you be open to a short chat about how to break into NLP research roles like yours at Microsoft Research?",0.85,PASS
+R04,2024DS004,REG2014DS04,"Hello Arun, I'm working on data pipelines with Spark and Airflow for a class project and would love your advice on designing pipelines that scale, based on your experience at AWS.",0.80,PASS
+R05,2024DS005,REG2014DS05,"Hi Divya, I'm building small computer vision projects and am very interested in autonomous vehicle perception systems. Could I get 20 minutes to ask about your work at Tesla?",0.83,PASS
+R06,2024DS006,REG2014DS06,"Hello Ramesh, I'm interested in product analytics and experiment design. I'd love to hear how your team runs A/B tests at Flipkart and what skills helped you get there.",0.76,PASS
+R07,2024DS007,REG2014DS07,"Hi Kavya, I'm focused on fraud detection models for my coursework and would appreciate any guidance on how banking fraud analytics teams like yours at HSBC operate.",0.79,PASS
+R08,2024DS008,REG2014DS08,"Hello Sanjay, I'm interested in applying predictive modeling to healthcare data. Would you be willing to share how you approach clinical data science problems at Apollo Hospitals?",0.81,PASS
+R09,2024DS009,REG2014DS09,"Hi Priyanka, I'm learning about MLOps and model deployment pipelines. I'd love your advice on tools like Docker and Kubernetes based on your experience at Netflix.",0.77,PASS
+R10,2024DS010,REG2014DS10,"Hello Vinod, I'm interested in business intelligence and enterprise reporting architecture. Could I ask you a few questions about BI consulting at Deloitte?",0.74,PASS
+R11,2024DS011,REG2014DS01,"Hi Neha, I'm building a movie recommendation engine as a capstone project and would love to learn about production recommendation systems at Google.",0.84,PASS
+R12,2024DS012,REG2014DS02,"Hello Suresh, I'm interested in credit risk modeling and would appreciate your insight into risk analytics workflows at Deutsche Bank.",0.75,PASS
+R13,2024DS013,REG2014DS03,"Hi Lakshmi, I've been fine-tuning small transformer models and would love to hear how NLP research translates into real products at Microsoft Research.",0.86,PASS
+R14,2024DS014,REG2014DS04,"Hello Arun, I'm interested in distributed data systems and would value your perspective on designing reliable pipelines at AWS.",0.79,PASS
+R15,2024DS015,REG2014DS05,"Hi Divya, I'm working on drone object detection and would love to learn about perception engineering for autonomous systems at Tesla.",0.82,PASS
+R16,2024DS016,REG2014DS06,"Hello Ramesh, I'm curious how experimentation culture shapes product decisions and would appreciate your perspective from Flipkart.",0.77,PASS
+R17,2024DS017,REG2014DS07,"Hi Kavya, I'm working on an anomaly-detection project for transaction data and would love your advice on fraud analytics at HSBC.",0.80,PASS
+R18,2024DS018,REG2014DS08,"Hello Sanjay, I'm interested in patient outcome prediction models and would appreciate hearing how your team applies ML at Apollo Hospitals.",0.78,PASS
+R19,2024DS019,REG2014DS09,"Hi Priyanka, I'm building CI/CD pipelines for ML deployment and would love your advice on MLOps practices at Netflix.",0.76,PASS
+R20,2024DS020,REG2014DS10,"Hello Vinod, I'm interested in enterprise BI architecture and would appreciate your perspective on consulting engagements at Deloitte.",0.75,PASS
+R21,2024DS001,REG2014DS03,"hi need job pls help me get internship thanks",0.42,FAIL
+R22,2024DS002,REG2014DS05,"hello sir i want to work in your company please respond asap",0.38,FAIL
+R23,2024DS003,REG2014DS06,"hey can u help me get placed",0.35,FAIL
+R24,2024DS004,REG2014DS07,"please connect me with recruiters at your company",0.45,FAIL
+R25,2024DS005,REG2014DS08,"hi mam i need mentorship urgently reply fast",0.40,FAIL
+R26,2024DS006,REG2014DS09,"hello i am looking for job opportunities pls guide",0.44,FAIL
+R27,2024DS007,REG2014DS10,"hi can you refer me for a job",0.37,FAIL
+R28,2024DS008,REG2014DS01,"please help me with placement i am confused",0.41,FAIL
+R29,2024DS009,REG2014DS02,"hi need guidance asap thanks in advance",0.39,FAIL
+R30,2024DS010,REG2014DS04,"hello sir please respond i need help urgently",0.43,FAIL

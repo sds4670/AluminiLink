@@ -78,6 +78,21 @@ Rather than keep burning time chasing 2021-era pinned dependencies, the code lea
 
 All four new endpoints (`predict/response`, `predict/completion`, `admin/analytics/summary`, `admin/analytics/snapshots`) plus the enhanced `admin/users`/`admin/audit-logs` filters were verified live via curl (including role-based 403 checks), and every rewritten frontend page was confirmed to transform cleanly through Vite with no import/build errors.
 
+### Day 7 — Production readiness: pilot data, integration tests, test cases, final checks
+No new modules — this pass focused on making the existing 9 modules demo/pilot-ready and provable:
+
+- **Clean-slate reseed**: wiped every test-generated row (posts, sessions, requests, slots, match scores, profiles, and every non-admin user) back to empty tables, then reseeded a full pilot dataset: 20 students + 10 alumni (`students_seed.csv` grew from 10 to 20 rows; `alumni_seed.csv` unchanged), all 200 student×alumni match scores, 30 connection requests (20 accepted / 10 rejected) from a new `connection_requests_seed.csv`, and 20 sessions (15 completed / 4 upcoming / 1 cancelled) from a new `sessions_seed.csv` — each completed session got a student-authored `session_feedbacks` row (rating 4 or 5). `seed.py` was extended with `_seed_requests()`, `_seed_sessions()`, and `_seed_posts()` to load all of this, keyed by roll number / register number rather than raw profile IDs (safe to re-run, matches the existing idempotent pattern). 5 sample posts (one per `post_type`) were added directly in `seed.py` since the spec didn't call for a dedicated CSV for those. Also created `availability_slots` + `connection_windows` for each seeded session so the data is structurally consistent with what the real booking flow would have produced, not just bare session rows.
+- **Integration test suite** (`backend/tests/test_integration.py`, 10 tests, `backend/tests/conftest.py` for fixtures): runs against the *real* running stack (live backend, Postgres, Redis) rather than an isolated ASGI app, using `httpx.AsyncClient` against `http://localhost:8000`. Every test registers its own throwaway student/alumni account (unique email + a whitelist row inserted on the fly via a dedicated `NullPool`-based test DB engine) so the suite is safe to re-run against the pilot-seeded database without colliding with the seed data, and cleans up after itself (an `autouse` fixture deletes every test-created user + whitelist row after each test — cascading FKs take care of their profiles/requests/sessions/posts). All 10 pass.
+- **One deliberate deviation from the literal test spec**: the given Test 2 sketch ("pending alumni login -> expect 403") doesn't match this system's actual, intentional design (documented back in Day 3) — a pending alumnus **can** log in immediately; the verification gate sits on profile/availability creation instead. `test_alumni_pending_then_verified` and `docs/test_cases.md`'s TC-M1-06 both test and document the real gate location rather than asserting a login-time 403 that would never actually happen.
+- **`docs/test_cases.md`**: 65 documented test cases across all 9 modules (Auth, Matching, Screener, Windows/Sessions, Feed, Predictive Models, Admin Analytics, Alumni Verification, Availability), each mapped to either the automated suite or to live verification performed during that module's original build. The one `Known Limitation`-status case (TC-M5-04) documents that toxicity filtering is inert rather than pretending it works.
+- **`/health` endpoint**: now reports SBERT model load status (`{"status":"ok","app":"...","model":"loaded"}`) instead of just a static ack, so a deployment health check can tell the difference between "the process is up" and "the ML model actually loaded."
+- **Final checks**: all 5 Docker services confirmed running; all core tables present; Redis `PING` -> `PONG`; Celery worker confirmed consuming all 5 queues (`celery`, `screening`, `windows`, `reminders`, `analytics`) with all 4 tasks registered; trained model files (`response_model.pkl`, `response_scaler.pkl`, `completion_model.pkl`) confirmed present on the host `backend/models/` directory; full test suite green.
+
+**Bugs/gaps found and fixed along the way:**
+- The task spec's reset SQL referenced a table `session_feedback` (singular) — the actual table (see 3.3 below) is `session_feedbacks` (plural, matching the SQLAlchemy model's `__tablename__`). Used the correct name when running the reset.
+- First attempt at the integration suite hit a classic pytest-asyncio + async-SQLAlchemy trap: reusing the app's module-level `engine`/`AsyncSessionLocal` meant the first test's pooled asyncpg connection got reused by later tests running on a *different* event loop (pytest-asyncio's default is a fresh loop per test function), crashing with `RuntimeError: ... attached to a different loop`. Fixed by giving the test suite its own dedicated engine using `NullPool` (every checkout opens a brand-new connection bound to whichever loop is currently running), rather than trying to force every test onto one shared loop.
+- No password was on file for the real `admin@christuniversity.in` account (see Day 5's note) — all admin-gated tests and manual verification in this pass used the `testadmin@christuniversity.in` / `Passw0rd!` account created back then.
+
 ---
 
 ## 2. Is the database "hardcoded"? — short answer: no, it's seeded
@@ -252,21 +267,32 @@ No new tables for Module 6 — the trained models live as `.pkl` files on disk (
 
 ---
 
-## 4. What's actually in the database right now (snapshot)
+## 4. What's actually in the database right now (Day 7 pilot snapshot)
+
+As of Day 7, the database was wiped back to empty (all test-generated rows and all
+non-admin users deleted) and reseeded from scratch with a single, coherent pilot
+dataset — no more accumulated test/browser-registration cruft from earlier days.
 
 | Table | Row count | What's in it |
 |---|---|---|
-| `users` | 24 | 10 seeded students + 10 seeded alumni + 1 admin (`admin@christuniversity.in`) + 2 accounts created by real registration attempts during your own browser testing (`test@christuniversity.in`, `meera@christuniversity.in`) + 1 `testadmin@christuniversity.in` (created Day 5 since the original admin's password wasn't on file — password `Passw0rd!`) |
-| `allowed_students` | 20 | `2024DS001`–`2024DS020`, 11 currently claimed (10 seeded + `test@`/`meera@`'s numbers), 9 still open for real signups |
+| `users` | 32 | 20 seeded students + 10 seeded alumni + 2 admins (`admin@christuniversity.in`, real account, password not on file; `testadmin@christuniversity.in` / `Passw0rd!`, created Day 5 for testing) |
+| `allowed_students` | 20 | `2024DS001`–`2024DS020`, all 20 claimed by the seeded students |
 | `allowed_alumni` | 10 | `REG2014DS01`–`REG2014DS10`, all 10 claimed by the seeded alumni |
-| `student_profiles` | 10 | the 10 seeded students, each with a real SBERT embedding |
-| `alumni_profiles` | 10 | the 10 seeded alumni, each with a real SBERT embedding |
-| `match_scores` | 100 | every seeded-student × seeded-alumni pair (10×10), real cosine similarities |
-| `audit_logs` | 4 | admin approve/reject of an alumni account (Day 3) + a `session_completed` and `expire_window` entry from Module 3/4/5 endpoint verification |
-| `analytics_snapshots` | 1 | Day 5's live ETL run, dated today |
-| `availability_slots`, `connection_requests`, `connection_windows`, `sessions`, `session_feedbacks`, `posts` (well, 1 real post from Feed testing), `post_moderation_logs`, `post_likes`, `post_comments` | 0 (or as noted) | cleared after each round of endpoint testing — everything created during verification (test posts, test bookings, test feedback, the Day 5 test session used to verify `predict/completion`) was deliberately removed afterward so the database only reflects the intentional seed set |
+| `student_profiles` | 20 | all 20 seeded students, each with a real SBERT embedding |
+| `alumni_profiles` | 10 | all 10 seeded alumni, each with a real SBERT embedding |
+| `match_scores` | 200 | every seeded-student × seeded-alumni pair (20×10), real cosine similarities |
+| `connection_requests` | 30 | 20 accepted (`connection_requests_seed.csv`, outcome=PASS) + 10 rejected (outcome=FAIL) |
+| `connection_windows` | 20 | one `booked` window per accepted request |
+| `availability_slots` | 20 | one `booked` slot per seeded session |
+| `sessions` | 20 | 15 `completed`, 4 `scheduled` (labelled "upcoming" in the CSV), 1 `cancelled` |
+| `session_feedbacks` | 15 | one student-authored feedback (rating 4 or 5) per completed session |
+| `posts` | 5 | one per `post_type` (internship/job/event/resource/query), all `approved` |
+| `audit_logs` | 27 | never truncated by design — accumulated admin approve/reject and session-completion entries across every module's verification pass, including this one |
+| `analytics_snapshots` | 1+ | grows by one row per calendar day the ETL runs (upserted, not duplicated, if run again same-day) |
 
-Test verification data is cleared after each session by design (per your request during Day 4 cleanup) — the only non-seed rows that persist are the 2 real accounts you registered yourself while testing the frontend, and the 4 audit log entries (audit logs are meant to be a permanent record, so they're never truncated).
+Test-suite runs (`pytest tests/test_integration.py`) create and then fully clean up
+their own throwaway users/whitelist rows — running the suite does not permanently
+change the counts above.
 
 ---
 
@@ -276,9 +302,30 @@ Test verification data is cleared after each session by design (per your request
 # Wipe and refill the whitelist gate tables only
 docker compose exec backend python -m app.scripts.seed_whitelist
 
-# Create/refresh the 10 demo students + 10 demo alumni (profiles, embeddings, match scores)
-# Safe to re-run — skips users/profiles that already exist, but always re-links whitelist rows
+# Full pilot reseed: 20 students + 10 alumni + 200 match scores + 30 connection
+# requests + 20 sessions/feedback + 5 posts. Safe to re-run — skips rows that
+# already exist (matched by email / student-alumni pair) rather than duplicating.
 docker compose exec backend python -m app.scripts.seed
 ```
 
-Both scripts live in `backend/app/scripts/`. The CSVs (`students_seed.csv`, `alumni_seed.csv`) are the actual source of truth for the 10+10 demo accounts — edit those and re-run `seed.py` to change the demo data.
+Both scripts live in `backend/app/scripts/`. Four CSVs are the source of truth for
+the pilot dataset — edit these and re-run `seed.py` to change the demo data:
+`students_seed.csv` (20 rows), `alumni_seed.csv` (10 rows), `connection_requests_seed.csv`
+(30 rows, `ref`/`student_roll_number`/`alumni_register_number`/`message`/`screening_score`/`outcome`),
+and `sessions_seed.csv` (20 rows, `ref`/`request_ref`/`scheduled_at`/`duration_minutes`/`status`).
+
+To wipe back to an empty (structure-only) state before reseeding, see the reset SQL
+in the Day 7 log above — it deletes every table's rows except `allowed_students`/
+`allowed_alumni` (reset in place, not deleted) and any `role='admin'` user.
+
+---
+
+## 6. Known limitations
+
+- **Toxicity moderation is inert.** `detoxify` is not installed (see the Day 4 dependency-conflict note above) — layers 1-2 of the feed moderation pipeline (length, spam keywords) are fully enforced; layers 3-4 (toxicity detection, borderline admin-review flagging) never trigger, since `toxicity_score` is hardcoded to `0.0` by the `except Exception` fallback in `moderate_post()`.
+- **Predictive models are trained on synthetic data.** `train_models.py`'s `LogisticRegression` (response likelihood) and `RandomForestClassifier` (completion likelihood) are both fit on ~30 hardcoded, illustrative rows — not on this platform's real historical outcomes (there isn't enough real usage history yet to train on). Predictions are directionally reasonable but should not be treated as calibrated probabilities.
+- **Single department only.** All seeded students and the whitelist are Data Science-only; the platform has no department/school dimension in its schema, so multi-department matching or filtering hasn't been exercised.
+- **No email notifications.** Request acceptance, window-expiry warnings, session reminders, etc. all happen silently in-app (or as Celery-logged events) — no email/SMS delivery layer exists. Deferred.
+- **No calendar integration.** Sessions are scheduled with a plain `scheduled_at` timestamp; there's no `.ics` export, Google Calendar sync, or reminder email tied to a real calendar event. Deferred.
+
+---

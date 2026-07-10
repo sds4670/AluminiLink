@@ -86,4 +86,10 @@ app.include_router(predict.router)
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "app": settings.app_name}
+    try:
+        from app.services.ml.embeddings import model as sbert_model
+        model_status = "loaded" if sbert_model is not None else "not_loaded"
+    except Exception:
+        model_status = "not_loaded"
+
+    return {"status": "ok", "app": settings.app_name, "model": model_status}
