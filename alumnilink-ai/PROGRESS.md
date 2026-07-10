@@ -64,6 +64,20 @@ The spec asked for `detoxify==0.5.1` to power the toxicity-detection layer. Afte
 
 Rather than keep burning time chasing 2021-era pinned dependencies, the code leans on the fallback `moderate_post()` already had built in: `try: from detoxify import Detoxify ... except Exception: toxicity = 0.0`. **Practical effect**: layers 1–2 (length, spam keywords) fully work today; layers 3–4 (toxicity detection, admin-review flagging) are currently inert — nothing gets auto-rejected or flagged for toxicity, only for being too short or spammy. Revisit this if real toxicity filtering becomes a priority (e.g. a dedicated container/venv pinned to `transformers==4.22.1` just for this one function, or swapping to a newer toxicity library without detoxify's stale pins).
 
+### Day 5 — Module 6 (Predictive Models) + Module 7 (Admin Analytics/ETL) + full frontend wiring
+- **Module 6**: two scikit-learn models trained on synthetic-but-representative data in `scripts/train_models.py` and persisted with `joblib`: a `LogisticRegression` (+ `StandardScaler`) predicting how likely a student's outreach is to get an alumnus response, and a `RandomForestClassifier` predicting how likely a booked session is to actually complete. Both are lazy-loaded singletons in `services/ml/predict.py`. New endpoints: `GET /api/v1/predict/response/{alumni_id}` (student-only) and `GET /api/v1/predict/completion/{session_id}` (student or alumni, participant-only), each returning a likelihood float plus a High/Medium/Low interpretation. A shared `get_or_compute_match_score()` helper was added to `matching_service.py` so both the matching router and the new predict router can reuse the same "look up the cached score, else compute + cache it" logic.
+- **Module 7**: a bronze→silver→gold ETL pipeline. Bronze = raw counts (students, alumni, requests, sessions, posts, avg ratings/scores). Silver = derived rates (acceptance rate, completion rate, avg-match-score %) computed on top of bronze. Gold = the combined dict upserted into a new `analytics_snapshots` table, keyed by `snapshot_date`. `GET /api/v1/admin/analytics/summary` runs the ETL inline and returns the live numbers; `GET /api/v1/admin/analytics/snapshots` returns the last 30 days of saved snapshots for trend charts. A Celery Beat schedule (`run_nightly_etl`, 2am daily, `analytics` queue) automates this going forward.
+- **Admin router fully migrated to `/api/v1/admin`** (the last hold-out from the v1 migration started in earlier modules) — `GET /users` gained a `?role=` filter and now returns `full_name`/`verification_status`; `GET /audit-logs` gained a `?action=` filter; the old `/reports/summary` endpoint was removed in favour of the richer `/analytics/summary`.
+- **Frontend**: wired all remaining pages to real endpoints. Added `recharts` for charts. Rewrote both Dashboards (student: 4 stat cards + top matches + feed preview; alumni: mentor tier badge computed from completed-session count, plus a client-side "AI Mentor Score" blending average rating, completion volume, response rate, and profile completeness), the admin Dashboard (6 KPI cards + a Recharts funnel bar chart) and Reports (Recharts line chart of the 3 snapshot rates over time), UserManagement and AuditLogs (role/action filters), and AlumniProfile (shows the new response-likelihood prediction badge). Added a `/pending` page and a `requireVerified` flag on `ProtectedRoute` so an alumnus whose account is still awaiting admin approval can see their dashboard/profile but gets redirected away from availability/requests/students/sessions.
+- Fixed a leftover bug while doing this: `AlumniApprovalQueue.jsx`'s approve/reject buttons were still posting to the pre-migration `/api/admin/...` path (only its `GET` had been updated when the router was migrated) — now consistently on `/api/v1/admin/...`.
+
+**Bugs found and fixed along the way:**
+- The Docker bind mount (`./backend:/app`) hides anything written to `/app` during the image *build* — so the `RUN python -m app.scripts.train_models` step in the Dockerfile produces `.pkl` files that exist in the image layer but are invisible once the container starts (the host's `backend/models/` directory, empty, gets mounted over `/app/models/`). Fix: also run the training script once against the *live* container (`docker compose exec backend python -m app.scripts.train_models`) so the `.pkl` files land on the actual host directory and persist across restarts.
+- After `docker compose up -d --force-recreate backend celery_worker`, an immediate queue/task check on the celery worker showed only the old queues/tasks (missing `analytics`, `run_nightly_etl`, `send_session_reminder`) — looked like the recreate hadn't taken effect. This turned out to be a timing artifact: checking again a few seconds later (once both containers were fully up, confirmed via `docker compose ps`) showed the correct queues and all 4 registered tasks. Worth remembering: don't trust a queue/task check taken in the same breath as a container recreate.
+- No admin password was on file (it had been set by hand, outside version control, in an earlier session). Rather than reset the existing `admin@christuniversity.in` account's password, created a separate `testadmin@christuniversity.in` / `Passw0rd!` account for ongoing endpoint testing, leaving the original admin untouched.
+
+All four new endpoints (`predict/response`, `predict/completion`, `admin/analytics/summary`, `admin/analytics/snapshots`) plus the enhanced `admin/users`/`admin/audit-logs` filters were verified live via curl (including role-based 403 checks), and every rewritten frontend page was confirmed to transform cleanly through Vite with no import/build errors.
+
 ---
 
 ## 2. Is the database "hardcoded"? — short answer: no, it's seeded
@@ -225,20 +239,32 @@ Only `moderation_status = approved` posts are ever returned by the public feed e
 ### 3.6 Admin
 **`audit_logs`** — records admin/system actions (`approve_alumni`, `reject_alumni`, `ban_user`, `expire_window`, `session_completed`, etc.) with who did it and when. `actor_id` is `NULL` for system-triggered entries like `expire_window` (nobody clicked a button — the Redis TTL fired).
 
+### 3.7 Predictive models & analytics (Module 6 + 7)
+
+No new tables for Module 6 — the trained models live as `.pkl` files on disk (`backend/models/`), not in Postgres.
+
+**`analytics_snapshots`** *(new)* — one row per day, storing the bronze+silver ETL output as a JSONB blob.
+| Column | Type | Notes |
+|---|---|---|
+| `snapshot_date` | date, unique | one snapshot per calendar day — re-running the ETL the same day upserts instead of duplicating |
+| `metrics` | JSONB | the full bronze+silver dict (counts + acceptance/completion rates + avg-match-score %) |
+| `created_at` | timestamp | |
+
 ---
 
 ## 4. What's actually in the database right now (snapshot)
 
 | Table | Row count | What's in it |
 |---|---|---|
-| `users` | 23 | 10 seeded students + 10 seeded alumni + 1 admin (`admin@christuniversity.in`) + 2 accounts created by real registration attempts during your own browser testing (`test@christuniversity.in`, `meera@christuniversity.in`) |
+| `users` | 24 | 10 seeded students + 10 seeded alumni + 1 admin (`admin@christuniversity.in`) + 2 accounts created by real registration attempts during your own browser testing (`test@christuniversity.in`, `meera@christuniversity.in`) + 1 `testadmin@christuniversity.in` (created Day 5 since the original admin's password wasn't on file — password `Passw0rd!`) |
 | `allowed_students` | 20 | `2024DS001`–`2024DS020`, 11 currently claimed (10 seeded + `test@`/`meera@`'s numbers), 9 still open for real signups |
 | `allowed_alumni` | 10 | `REG2014DS01`–`REG2014DS10`, all 10 claimed by the seeded alumni |
 | `student_profiles` | 10 | the 10 seeded students, each with a real SBERT embedding |
 | `alumni_profiles` | 10 | the 10 seeded alumni, each with a real SBERT embedding |
 | `match_scores` | 100 | every seeded-student × seeded-alumni pair (10×10), real cosine similarities |
 | `audit_logs` | 4 | admin approve/reject of an alumni account (Day 3) + a `session_completed` and `expire_window` entry from Module 3/4/5 endpoint verification |
-| `availability_slots`, `connection_requests`, `connection_windows`, `sessions`, `session_feedbacks`, `posts`, `post_moderation_logs`, `post_likes`, `post_comments` | 0 | cleared after each round of endpoint testing — everything that was created during verification (test posts, test bookings, test feedback) was deliberately truncated afterward so the database only reflects the intentional seed set |
+| `analytics_snapshots` | 1 | Day 5's live ETL run, dated today |
+| `availability_slots`, `connection_requests`, `connection_windows`, `sessions`, `session_feedbacks`, `posts` (well, 1 real post from Feed testing), `post_moderation_logs`, `post_likes`, `post_comments` | 0 (or as noted) | cleared after each round of endpoint testing — everything created during verification (test posts, test bookings, test feedback, the Day 5 test session used to verify `predict/completion`) was deliberately removed afterward so the database only reflects the intentional seed set |
 
 Test verification data is cleared after each session by design (per your request during Day 4 cleanup) — the only non-seed rows that persist are the 2 real accounts you registered yourself while testing the frontend, and the 4 audit log entries (audit logs are meant to be a permanent record, so they're never truncated).
 

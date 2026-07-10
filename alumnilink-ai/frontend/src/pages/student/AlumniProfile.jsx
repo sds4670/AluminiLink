@@ -11,21 +11,30 @@ const WHY_RECOMMENDED_LABELS = [
   "Active Mentor",
 ];
 
+const RESPONSE_STYLES = {
+  High: "bg-green-100 text-green-800",
+  Medium: "bg-amber-100 text-amber-800",
+  Low: "bg-gray-100 text-gray-600",
+};
+
 export default function AlumniProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [matchScore, setMatchScore] = useState(null);
+  const [responsePrediction, setResponsePrediction] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       api.get(`/api/v1/profiles/alumni/${id}`),
       api.get(`/api/v1/matching/alumni/${id}/score`).catch(() => null),
+      api.get(`/api/v1/predict/response/${id}`).catch(() => null),
     ])
-      .then(([profileRes, scoreRes]) => {
+      .then(([profileRes, scoreRes, predictRes]) => {
         setProfile(profileRes.data);
         if (scoreRes) setMatchScore(scoreRes.data.match_score);
+        if (predictRes) setResponsePrediction(predictRes.data);
       })
       .finally(() => setLoading(false));
   }, [id]);
@@ -50,6 +59,15 @@ export default function AlumniProfile() {
             </div>
             {matchScore != null && <MatchBadge score={matchScore} />}
           </div>
+
+          {responsePrediction && (
+            <div className="mb-5 flex items-center gap-2">
+              <span className="text-xs text-gray-500">Predicted response likelihood:</span>
+              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${RESPONSE_STYLES[responsePrediction.interpretation]}`}>
+                {responsePrediction.interpretation} ({Math.round(responsePrediction.response_likelihood * 100)}%)
+              </span>
+            </div>
+          )}
 
           {profile.about_me && (
             <div className="mb-5">

@@ -66,3 +66,21 @@ def send_session_reminder(self, session_id: int):
     24 hours before a scheduled session.
     """
     pass
+
+
+@celery_app.task(name="app.workers.tasks.run_nightly_etl", bind=True)
+def run_nightly_etl(self):
+    """
+    Bronze -> Silver -> Gold analytics pipeline. Runs nightly via Celery
+    beat (see celery_app.py's beat_schedule); the exact same computation
+    also runs inline from GET /api/v1/admin/analytics/summary.
+    """
+    async def _run():
+        from app.services.analytics_service import compute_metrics, save_snapshot
+
+        async with AsyncSessionLocal() as db:
+            metrics = await compute_metrics(db)
+            await save_snapshot(db, metrics)
+            await db.commit()
+
+    asyncio.run(_run())

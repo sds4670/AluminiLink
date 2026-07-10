@@ -18,6 +18,13 @@ RUN pip install --no-cache-dir --prefer-binary --timeout 180 --retries 10 \
 
 COPY . .
 
+# Train the Module 6 predictive models at build time so the image ships with
+# them ready to go. Best-effort: never fail the build over this (e.g. if the
+# training data shape ever changes) — app.services.ml.predict will just 404
+# clearly at request time instead of silently degrading like the moderation
+# fallback does.
+RUN python -m app.scripts.train_models 2>/dev/null || true
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

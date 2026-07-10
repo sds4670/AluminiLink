@@ -36,3 +36,19 @@ async def upsert_match_score(student_id: int, alumni_id: int, score: float, db: 
         db.add(match)
     await db.flush()
     return match
+
+
+async def get_or_compute_match_score(student: StudentProfile, alumni: AlumniProfile, db: AsyncSession) -> float:
+    """Look up the cached score; compute + cache it on the fly if it isn't there yet."""
+    result = await db.execute(
+        select(MatchScore).where(MatchScore.student_id == student.id, MatchScore.alumni_id == alumni.id)
+    )
+    match = result.scalar_one_or_none()
+    if match:
+        return match.score
+
+    if student.embedding is None or alumni.embedding is None:
+        return 0.0
+    score = cosine_similarity(student.embedding, alumni.embedding)
+    await upsert_match_score(student.id, alumni.id, score, db)
+    return score

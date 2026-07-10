@@ -4,6 +4,7 @@ import useAuthStore from "./store/authStore";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import Pending from "./pages/Pending";
 
 import StudentDashboard from "./pages/student/Dashboard";
 import StudentProfile from "./pages/student/Profile";
@@ -30,10 +31,13 @@ import ModerationQueue from "./pages/admin/ModerationQueue";
 import AuditLogs from "./pages/admin/AuditLogs";
 import Reports from "./pages/admin/Reports";
 
-function ProtectedRoute({ children, allowedRoles }) {
-  const { isAuthenticated, role } = useAuthStore();
+function ProtectedRoute({ children, allowedRoles, requireVerified }) {
+  const { isAuthenticated, role, user } = useAuthStore();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (allowedRoles && !allowedRoles.includes(role)) return <Navigate to="/" replace />;
+  if (requireVerified && role === "alumni" && user?.verification_status !== "verified") {
+    return <Navigate to="/pending" replace />;
+  }
   return children;
 }
 
@@ -44,6 +48,7 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/pending" element={<ProtectedRoute allowedRoles={["alumni"]}><Pending /></ProtectedRoute>} />
 
         {/* Student routes */}
         <Route path="/student" element={<ProtectedRoute allowedRoles={["student"]}><StudentDashboard /></ProtectedRoute>} />
@@ -59,10 +64,10 @@ export default function App() {
         {/* Alumni routes */}
         <Route path="/alumni" element={<ProtectedRoute allowedRoles={["alumni"]}><AlumniDashboard /></ProtectedRoute>} />
         <Route path="/alumni/profile" element={<ProtectedRoute allowedRoles={["alumni"]}><AlumniProfileForm /></ProtectedRoute>} />
-        <Route path="/alumni/availability" element={<ProtectedRoute allowedRoles={["alumni"]}><AvailabilitySlots /></ProtectedRoute>} />
-        <Route path="/alumni/requests" element={<ProtectedRoute allowedRoles={["alumni"]}><MentorshipRequests /></ProtectedRoute>} />
-        <Route path="/alumni/students" element={<ProtectedRoute allowedRoles={["alumni"]}><MyStudents /></ProtectedRoute>} />
-        <Route path="/alumni/sessions" element={<ProtectedRoute allowedRoles={["alumni"]}><AlumniSessions /></ProtectedRoute>} />
+        <Route path="/alumni/availability" element={<ProtectedRoute allowedRoles={["alumni"]} requireVerified><AvailabilitySlots /></ProtectedRoute>} />
+        <Route path="/alumni/requests" element={<ProtectedRoute allowedRoles={["alumni"]} requireVerified><MentorshipRequests /></ProtectedRoute>} />
+        <Route path="/alumni/students" element={<ProtectedRoute allowedRoles={["alumni"]} requireVerified><MyStudents /></ProtectedRoute>} />
+        <Route path="/alumni/sessions" element={<ProtectedRoute allowedRoles={["alumni"]} requireVerified><AlumniSessions /></ProtectedRoute>} />
         <Route path="/alumni/feed" element={<ProtectedRoute allowedRoles={["alumni"]}><AlumniFeed /></ProtectedRoute>} />
 
         {/* Admin routes */}

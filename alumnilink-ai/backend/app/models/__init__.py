@@ -14,6 +14,7 @@ from app.models.post_moderation_log import PostModerationLog, ModerationAction
 from app.models.post_like import PostLike
 from app.models.post_comment import PostComment
 from app.models.audit_log import AuditLog
+from app.models.analytics_snapshot import AnalyticsSnapshot
 
 __all__ = [
     "User", "UserRole", "UserStatus", "VerificationStatus",
@@ -32,4 +33,5 @@ __all__ = [
     "PostLike",
     "PostComment",
     "AuditLog",
+    "AnalyticsSnapshot",
 ]

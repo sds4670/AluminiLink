@@ -7,7 +7,7 @@ from app.config import settings
 from app.database import create_all_tables
 from app.core.redis_client import redis_client
 
-from app.routers import auth, profiles, matching, requests, windows, sessions, availability, feed, admin, screener
+from app.routers import auth, profiles, matching, requests, windows, sessions, availability, feed, admin, screener, predict
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,7 @@ app.include_router(feed.router)
 app.include_router(admin.router)
 app.include_router(admin.moderation_router)
 app.include_router(screener.router)
+app.include_router(predict.router)
 
 
 @app.get("/health")

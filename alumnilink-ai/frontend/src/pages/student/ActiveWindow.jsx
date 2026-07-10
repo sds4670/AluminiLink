@@ -50,7 +50,7 @@ export default function ActiveWindow() {
               <h2 className="text-2xl font-bold text-gray-900">{window_.alumni_name}</h2>
               <p className="text-sm text-gray-500">{window_.company}</p>
             </div>
-            <CountdownTimer targetDate={window_.expires_at} label="Window closes in" />
+            <CountdownTimer seconds={window_.time_remaining_seconds} label="Window closes in" />
           </div>
         </div>
 

@@ -74,7 +74,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A app.workers.celery_app worker --loglevel=info -Q celery,screening,windows,reminders
+    command: celery -A app.workers.celery_app worker -B --loglevel=info -Q celery,screening,windows,reminders,analytics
 
   frontend:
     build:

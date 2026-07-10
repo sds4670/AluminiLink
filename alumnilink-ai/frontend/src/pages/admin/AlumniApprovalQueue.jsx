@@ -7,18 +7,18 @@ export default function AlumniApprovalQueue() {
   const [loading, setLoading] = useState(true);
 
   const load = () => {
-    api.get("/api/admin/alumni/pending").then((res) => setUsers(res.data)).finally(() => setLoading(false));
+    api.get("/api/v1/admin/alumni/pending").then((res) => setUsers(res.data)).finally(() => setLoading(false));
   };
 
   useEffect(load, []);
 
   const approve = async (id) => {
-    await api.post(`/api/admin/alumni/${id}/approve`);
+    await api.post(`/api/v1/admin/alumni/${id}/approve`);
     load();
   };
 
   const reject = async (id) => {
-    await api.post(`/api/admin/alumni/${id}/reject`);
+    await api.post(`/api/v1/admin/alumni/${id}/reject`);
     load();
   };
 

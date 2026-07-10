@@ -1,21 +1,24 @@
+from datetime import datetime, date, timedelta
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from typing import List
+from sqlalchemy import select
+from pydantic import BaseModel
 from app.database import get_db
 from app.core.dependencies import require_admin
 from app.models.user import User, UserRole, UserStatus, VerificationStatus
 from app.models.post import Post, ModerationStatus
 from app.models.post_moderation_log import PostModerationLog, ModerationAction
 from app.models.audit_log import AuditLog
+from app.models.analytics_snapshot import AnalyticsSnapshot
 from app.schemas.auth import UserResponse
 from app.schemas.feed import ModerationQueueItem, PostResponse
 from app.services.screener_service import approve_alumni, reject_alumni
-from pydantic import BaseModel
-from datetime import datetime
-from typing import Optional
+from app.services.analytics_service import compute_metrics, save_snapshot
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
+# Kept as a distinct object for main.py's existing `admin.moderation_router` include;
+# both routers now share the same /api/v1/admin prefix.
 moderation_router = APIRouter(prefix="/api/v1/admin/moderation", tags=["moderation"])
 
 
@@ -34,12 +37,19 @@ class AuditLogResponse(BaseModel):
 class UserAdminResponse(BaseModel):
     id: int
     email: str
+    full_name: Optional[str] = None
     role: str
     status: str
+    verification_status: str
     is_verified: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class SnapshotResponse(BaseModel):
+    snapshot_date: date
+    metrics: dict
 
 
 @router.get("/alumni/pending", response_model=List[UserResponse])
@@ -88,12 +98,16 @@ async def reject(
 
 @router.get("/users", response_model=List[UserAdminResponse])
 async def list_users(
+    role: Optional[UserRole] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(User).offset(skip).limit(limit))
+    query = select(User)
+    if role:
+        query = query.where(User.role == role)
+    result = await db.execute(query.offset(skip).limit(limit))
     return result.scalars().all()
 
 
@@ -115,37 +129,45 @@ async def ban_user(
 
 @router.get("/audit-logs", response_model=List[AuditLogResponse])
 async def get_audit_logs(
+    action: Optional[str] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(AuditLog).order_by(AuditLog.created_at.desc()).offset(skip).limit(limit)
-    )
+    query = select(AuditLog)
+    if action:
+        query = query.where(AuditLog.action == action)
+    result = await db.execute(query.order_by(AuditLog.created_at.desc()).offset(skip).limit(limit))
     return result.scalars().all()
 
 
-@router.get("/reports/summary")
-async def summary_report(
+@router.get("/analytics/summary")
+async def analytics_summary(
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    user_count = await db.scalar(select(func.count()).select_from(User))
-    alumni_pending = await db.scalar(
-        select(func.count()).select_from(User).where(
-            User.role == UserRole.alumni,
-            User.verification_status == VerificationStatus.pending,
-        )
+    """
+    curl http://localhost:8000/api/v1/admin/analytics/summary \\
+      -H "Authorization: Bearer <admin access_token>"
+    """
+    metrics = await compute_metrics(db)
+    await save_snapshot(db, metrics)
+    return metrics
+
+
+@router.get("/analytics/snapshots", response_model=List[SnapshotResponse])
+async def analytics_snapshots(
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    cutoff = date.today() - timedelta(days=30)
+    result = await db.execute(
+        select(AnalyticsSnapshot)
+        .where(AnalyticsSnapshot.snapshot_date >= cutoff)
+        .order_by(AnalyticsSnapshot.snapshot_date)
     )
-    posts_pending = await db.scalar(
-        select(func.count()).select_from(Post).where(Post.moderation_status == ModerationStatus.pending_review)
-    )
-    return {
-        "total_users": user_count,
-        "alumni_pending_approval": alumni_pending,
-        "posts_pending_moderation": posts_pending,
-    }
+    return result.scalars().all()
 
 
 @moderation_router.get("/queue", response_model=List[ModerationQueueItem])
@@ -153,10 +175,6 @@ async def moderation_queue(
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    curl http://localhost:8000/api/v1/admin/moderation/queue \\
-      -H "Authorization: Bearer <admin access_token>"
-    """
     result = await db.execute(
         select(Post, User)
         .join(User, Post.author_id == User.id)

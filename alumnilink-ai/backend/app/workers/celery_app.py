@@ -1,6 +1,7 @@
 import logging
 import redis
 from celery import Celery
+from celery.schedules import crontab
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,13 @@ celery_app.conf.update(
         "app.workers.tasks.screen_alumni_profile_task": {"queue": "screening"},
         "app.workers.tasks.expire_window": {"queue": "windows"},
         "app.workers.tasks.send_session_reminder": {"queue": "reminders"},
+        "app.workers.tasks.run_nightly_etl": {"queue": "analytics"},
+    },
+    beat_schedule={
+        "nightly-analytics-etl": {
+            "task": "app.workers.tasks.run_nightly_etl",
+            "schedule": crontab(hour=2, minute=0),
+        },
     },
 )
 

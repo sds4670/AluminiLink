@@ -9,9 +9,11 @@ const statusStyles = {
   cancelled: "bg-red-100 text-red-800",
   no_show: "bg-orange-100 text-orange-700",
   approved: "bg-green-100 text-green-800",
+  verified: "bg-green-100 text-green-800",
   active: "bg-green-100 text-green-800",
   inactive: "bg-gray-100 text-gray-600",
   banned: "bg-red-100 text-red-800",
+  pending_review: "bg-yellow-100 text-yellow-800",
 };
 
 export default function StatusBadge({ status }) {
