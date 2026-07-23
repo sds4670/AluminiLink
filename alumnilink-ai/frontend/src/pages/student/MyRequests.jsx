@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Layout from "../../components/layout/Layout";
 import StatusBadge from "../../components/ui/StatusBadge";
+import ChatThread from "../../components/chat/ChatThread";
+import useAuthStore from "../../store/authStore";
 import api from "../../api/axios";
 import { format } from "date-fns";
 
@@ -11,6 +13,8 @@ export default function MyRequests() {
   const [requests, setRequests] = useState([]);
   const [tab, setTab] = useState("pending");
   const [loading, setLoading] = useState(true);
+  const [openChatId, setOpenChatId] = useState(null);
+  const currentUser = useAuthStore((s) => s.user);
 
   useEffect(() => {
     api.get("/api/v1/requests/my")
@@ -72,6 +76,23 @@ export default function MyRequests() {
                 >
                   Book your session →
                 </Link>
+              )}
+              {r.status === "accepted" && (
+                <>
+                  <button
+                    onClick={() => setOpenChatId(openChatId === r.id ? null : r.id)}
+                    className="mt-3 ml-2 inline-block px-4 py-2 border border-primary-200 text-primary-700 rounded-lg text-sm font-medium hover:bg-primary-50 transition-colors"
+                  >
+                    {openChatId === r.id ? "Hide chat" : "Chat"}
+                  </button>
+                  {openChatId === r.id && currentUser && (
+                    <ChatThread
+                      requestId={r.id}
+                      currentUserId={currentUser.id}
+                      otherPartyName={r.alumni_name}
+                    />
+                  )}
+                </>
               )}
             </div>
           ))}

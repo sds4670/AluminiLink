@@ -15,6 +15,7 @@ from app.models.post_like import PostLike
 from app.models.post_comment import PostComment
 from app.models.audit_log import AuditLog
 from app.models.analytics_snapshot import AnalyticsSnapshot
+from app.models.message import Message
 
 __all__ = [
     "User", "UserRole", "UserStatus", "VerificationStatus",
@@ -34,4 +35,5 @@ __all__ = [
     "PostComment",
     "AuditLog",
     "AnalyticsSnapshot",
+    "Message",
 ]

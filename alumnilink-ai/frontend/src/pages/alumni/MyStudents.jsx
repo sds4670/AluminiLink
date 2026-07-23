@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
 import Layout from "../../components/layout/Layout";
+import ChatThread from "../../components/chat/ChatThread";
+import useAuthStore from "../../store/authStore";
 import api from "../../api/axios";
 
 export default function MyStudents() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [openChatId, setOpenChatId] = useState(null);
+  const currentUser = useAuthStore((s) => s.user);
 
   useEffect(() => {
     api.get("/api/v1/requests/incoming", { params: { status: "accepted" } })
@@ -23,6 +27,19 @@ export default function MyStudents() {
             <div key={r.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
               <p className="text-sm font-medium text-gray-900">{r.student_name}</p>
               <p className="text-xs text-gray-400 mt-0.5">{r.department} · Accepted</p>
+              <button
+                onClick={() => setOpenChatId(openChatId === r.id ? null : r.id)}
+                className="mt-2 inline-block px-3 py-1.5 border border-primary-200 text-primary-700 rounded-lg text-xs font-medium hover:bg-primary-50 transition-colors"
+              >
+                {openChatId === r.id ? "Hide chat" : "Chat"}
+              </button>
+              {openChatId === r.id && currentUser && (
+                <ChatThread
+                  requestId={r.id}
+                  currentUserId={currentUser.id}
+                  otherPartyName={r.student_name}
+                />
+              )}
             </div>
           ))}
         </div>

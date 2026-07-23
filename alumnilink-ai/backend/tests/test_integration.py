@@ -372,6 +372,192 @@ async def test_role_gates(client, db_session):
 
 
 # ---------------------------------------------------------------------------
+# Test 11 — Messaging: participant + accepted-status guards
+# ---------------------------------------------------------------------------
+async def test_messaging_guards(client, db_session, admin_token):
+    student_reg = await register_student(client, db_session)
+    student_headers = auth_headers(student_reg["access_token"])
+
+    alumni_reg = await register_alumni(client, db_session)
+    await approve_alumni_as_admin(client, admin_token, alumni_reg["user"]["id"])
+    alumni_headers = auth_headers(alumni_reg["access_token"])
+
+    await client.post(
+        "/api/v1/profiles/student",
+        json={
+            "department": "Data Science", "degree": "B.Sc", "graduation_year": 2027,
+            "career_goal": "Become a data analyst", "skills": ["SQL"],
+            "profile_description": "Interested in analytics.",
+        },
+        headers=student_headers,
+    )
+    await client.post(
+        "/api/v1/profiles/alumni",
+        json={
+            "company": "Test Co", "designation": "Analyst", "industry": "Finance",
+            "experience_years": 6, "skills": ["SQL"], "about_me": "Happy to mentor.",
+        },
+        headers=alumni_headers,
+    )
+
+    alumni_user_id = alumni_reg["user"]["id"]
+    req_resp = await client.post(
+        "/api/v1/requests/",
+        json={"alumni_id": alumni_user_id, "message": GOOD_MESSAGE},
+        headers=student_headers,
+    )
+    assert req_resp.status_code == 201
+    pending_request_id = req_resp.json()["request"]["id"]
+
+    # Still pending -> 403 for both send and read.
+    resp = await client.post(
+        f"/api/v1/requests/{pending_request_id}/messages", json={"content": "hi"}, headers=student_headers
+    )
+    assert resp.status_code == 403
+    resp = await client.get(f"/api/v1/requests/{pending_request_id}/messages", headers=student_headers)
+    assert resp.status_code == 403
+
+    # A second, unrelated student is not a participant -> 403 even once accepted.
+    outsider_reg = await register_student(client, db_session)
+    outsider_headers = auth_headers(outsider_reg["access_token"])
+
+    accept_resp = await client.patch(f"/api/v1/requests/{pending_request_id}/accept", headers=alumni_headers)
+    assert accept_resp.status_code == 200
+
+    resp = await client.post(
+        f"/api/v1/requests/{pending_request_id}/messages", json={"content": "hi"}, headers=outsider_headers
+    )
+    assert resp.status_code == 403
+    resp = await client.get(f"/api/v1/requests/{pending_request_id}/messages", headers=outsider_headers)
+    assert resp.status_code == 403
+
+    # Rejected request -> 403.
+    student_reg_2 = await register_student(client, db_session)
+    student_headers_2 = auth_headers(student_reg_2["access_token"])
+    await client.post(
+        "/api/v1/profiles/student",
+        json={
+            "department": "Data Science", "degree": "B.Sc", "graduation_year": 2027,
+            "career_goal": "Become a data analyst", "skills": ["SQL"],
+            "profile_description": "Interested in analytics.",
+        },
+        headers=student_headers_2,
+    )
+    req_resp_2 = await client.post(
+        "/api/v1/requests/",
+        json={"alumni_id": alumni_user_id, "message": GOOD_MESSAGE},
+        headers=student_headers_2,
+    )
+    rejected_request_id = req_resp_2.json()["request"]["id"]
+    reject_resp = await client.patch(f"/api/v1/requests/{rejected_request_id}/reject", headers=alumni_headers)
+    assert reject_resp.status_code == 200
+
+    resp = await client.post(
+        f"/api/v1/requests/{rejected_request_id}/messages", json={"content": "hi"}, headers=student_headers_2
+    )
+    assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Test 12 — Messaging: accepted lifecycle, ordering, and survival past booking
+# ---------------------------------------------------------------------------
+async def test_messaging_lifecycle_survives_booking_and_completion(client, db_session, admin_token):
+    student_reg = await register_student(client, db_session)
+    student_headers = auth_headers(student_reg["access_token"])
+    student_user_id = student_reg["user"]["id"]
+
+    alumni_reg = await register_alumni(client, db_session)
+    await approve_alumni_as_admin(client, admin_token, alumni_reg["user"]["id"])
+    alumni_headers = auth_headers(alumni_reg["access_token"])
+    alumni_user_id = alumni_reg["user"]["id"]
+
+    await client.post(
+        "/api/v1/profiles/student",
+        json={
+            "department": "Data Science", "degree": "B.Sc", "graduation_year": 2027,
+            "career_goal": "Become a data analyst", "skills": ["SQL"],
+            "profile_description": "Interested in analytics.",
+        },
+        headers=student_headers,
+    )
+    await client.post(
+        "/api/v1/profiles/alumni",
+        json={
+            "company": "Test Co", "designation": "Analyst", "industry": "Finance",
+            "experience_years": 6, "skills": ["SQL"], "about_me": "Happy to mentor.",
+        },
+        headers=alumni_headers,
+    )
+
+    slot_resp = await client.post(
+        "/api/v1/availability/",
+        json={"slot_date": "2026-08-03", "start_time": "11:00:00", "end_time": "11:30:00"},
+        headers=alumni_headers,
+    )
+    slot_id = slot_resp.json()["id"]
+
+    req_resp = await client.post(
+        "/api/v1/requests/",
+        json={"alumni_id": alumni_user_id, "message": GOOD_MESSAGE},
+        headers=student_headers,
+    )
+    request_id = req_resp.json()["request"]["id"]
+
+    accept_resp = await client.patch(f"/api/v1/requests/{request_id}/accept", headers=alumni_headers)
+    assert accept_resp.status_code == 200
+    window_id = accept_resp.json()["id"]
+
+    # Test 1 — either participant can send once accepted.
+    send_1 = await client.post(
+        f"/api/v1/requests/{request_id}/messages", json={"content": "Thanks for accepting!"}, headers=student_headers
+    )
+    assert send_1.status_code == 201
+    assert send_1.json()["sender_id"] == student_user_id
+
+    send_2 = await client.post(
+        f"/api/v1/requests/{request_id}/messages", json={"content": "Happy to help, book a slot!"}, headers=alumni_headers
+    )
+    assert send_2.status_code == 201
+    assert send_2.json()["sender_id"] == alumni_user_id
+
+    # Test 5 — ordering by created_at ascending.
+    thread = await client.get(f"/api/v1/requests/{request_id}/messages", headers=student_headers)
+    assert thread.status_code == 200
+    body = thread.json()
+    assert [m["content"] for m in body] == ["Thanks for accepting!", "Happy to help, book a slot!"]
+    timestamps = [m["created_at"] for m in body]
+    assert timestamps == sorted(timestamps)
+
+    # Test 6 — book the slot, complete the session, same thread still works.
+    book_resp = await client.post(
+        "/api/v1/sessions/book",
+        json={"window_id": window_id, "slot_id": slot_id},
+        headers=student_headers,
+    )
+    assert book_resp.status_code == 201
+    session_id = book_resp.json()["id"]
+
+    complete_resp = await client.patch(f"/api/v1/sessions/{session_id}/complete", headers=alumni_headers)
+    assert complete_resp.status_code == 200
+
+    post_completion_send = await client.post(
+        f"/api/v1/requests/{request_id}/messages",
+        json={"content": "Thanks for the session, that was great!"},
+        headers=student_headers,
+    )
+    assert post_completion_send.status_code == 201
+
+    final_thread = await client.get(f"/api/v1/requests/{request_id}/messages", headers=alumni_headers)
+    assert final_thread.status_code == 200
+    final_contents = [m["content"] for m in final_thread.json()]
+    assert final_contents == [
+        "Thanks for accepting!",
+        "Happy to help, book a slot!",
+        "Thanks for the session, that was great!",
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Test 10 — Predictive models
 # ---------------------------------------------------------------------------
 async def test_predictions(client, db_session, admin_token):

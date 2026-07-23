@@ -4,6 +4,28 @@ SPAM_KEYWORDS = [
     "limited offer", "act now", "make money fast"
 ]
 
+# Lazy-loaded singleton so requests never pay reload cost; stays None (and
+# every call falls back to toxicity=0.0) if the model can't load in this
+# environment. detoxify==0.5.1 was tried first and is a dead end (see
+# PROGRESS.md Day 4 — hard-pins transformers==4.22.1, which conflicts with
+# the transformers==4.30.2 this project needs for SBERT matching); toxic-bert
+# is loaded directly via the already-installed `transformers` lib instead.
+_toxicity_pipeline = None
+_toxicity_load_failed = False
+
+
+def _get_toxicity_pipeline():
+    global _toxicity_pipeline, _toxicity_load_failed
+    if _toxicity_pipeline is None and not _toxicity_load_failed:
+        try:
+            from transformers import pipeline
+            _toxicity_pipeline = pipeline(
+                "text-classification", model="unitary/toxic-bert", top_k=None
+            )
+        except Exception:
+            _toxicity_load_failed = True
+    return _toxicity_pipeline
+
 
 def moderate_post(content: str) -> dict:
     """
@@ -36,12 +58,14 @@ def moderate_post(content: str) -> dict:
             "reason": "Post flagged as spam"
         }
 
-    # Layer 3 — toxicity detection (Detoxify)
-    # Lazy import to avoid startup crash if the model/weights aren't available.
+    # Layer 3 — toxicity detection (unitary/toxic-bert)
     try:
-        from detoxify import Detoxify
-        results = Detoxify("original").predict(content)
-        toxicity = results["toxicity"]
+        pipeline = _get_toxicity_pipeline()
+        if pipeline is None:
+            toxicity = 0.0
+        else:
+            label_scores = pipeline(content)[0]
+            toxicity = next(s["score"] for s in label_scores if s["label"] == "toxic")
     except Exception:
         toxicity = 0.0
 

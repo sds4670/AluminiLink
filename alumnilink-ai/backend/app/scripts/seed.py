@@ -38,6 +38,7 @@ from app.models.availability_slot import AvailabilitySlot, SlotStatus
 from app.models.session import Session, SessionStatus
 from app.models.session_feedback import SessionFeedback, FeedbackRole
 from app.models.post import Post, PostType, ModerationStatus
+from app.models.message import Message
 from app.services.ml.embeddings import encode_text, cosine_similarity
 from app.services.matching_service import upsert_match_score
 
@@ -317,6 +318,45 @@ async def _seed_posts(db, students: dict[str, StudentProfile], alumni: dict[str,
     return created
 
 
+SAMPLE_MESSAGE_THREAD = [
+    "student", "alumni", "student",
+]
+SAMPLE_MESSAGE_CONTENT = {
+    "student": "Thank you so much for accepting my request, looking forward to our conversation!",
+    "alumni": "Happy to help, feel free to book a slot that works for you and we can dive into your questions.",
+}
+
+
+async def _seed_messages(
+    db, requests: dict[str, ConnectionRequest], students: dict[str, StudentProfile], alumni: dict[str, AlumniProfile]
+) -> int:
+    """Adds a short sample message thread to a few already-accepted seeded requests, for demo purposes."""
+    student_user_id_by_profile_id = {s.id: s.user_id for s in students.values()}
+    alumni_user_id_by_profile_id = {a.id: a.user_id for a in alumni.values()}
+
+    created = 0
+    accepted = [r for r in requests.values() if r.status == RequestStatus.accepted]
+    for req in accepted[:3]:
+        existing = await db.execute(select(Message).where(Message.request_id == req.id))
+        if existing.scalars().first() is not None:
+            continue
+
+        for sender_role in SAMPLE_MESSAGE_THREAD:
+            sender_user_id = (
+                student_user_id_by_profile_id[req.student_id]
+                if sender_role == "student"
+                else alumni_user_id_by_profile_id[req.alumni_id]
+            )
+            db.add(Message(
+                request_id=req.id,
+                sender_id=sender_user_id,
+                content=SAMPLE_MESSAGE_CONTENT[sender_role],
+            ))
+            created += 1
+
+    return created
+
+
 async def seed() -> None:
     await create_all_tables()
 
@@ -329,6 +369,7 @@ async def seed() -> None:
         requests = await _seed_requests(db, students, alumni)
         session_count, feedback_count = await _seed_sessions(db, requests, students)
         post_count = await _seed_posts(db, students, alumni)
+        message_count = await _seed_messages(db, requests, students, alumni)
 
         await db.commit()
 
@@ -337,6 +378,7 @@ async def seed() -> None:
     print(f"Seeded {len(requests)} connection_requests.")
     print(f"Seeded {session_count} sessions and {feedback_count} session_feedback rows.")
     print(f"Seeded {post_count} posts.")
+    print(f"Seeded {message_count} sample messages.")
 
 
 if __name__ == "__main__":
