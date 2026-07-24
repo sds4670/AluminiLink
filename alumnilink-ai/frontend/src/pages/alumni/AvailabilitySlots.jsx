@@ -2,6 +2,22 @@ import { useEffect, useState } from "react";
 import Layout from "../../components/layout/Layout";
 import api from "../../api/axios";
 import { format } from "date-fns";
+import { getErrorMessage } from "../../utils";
+
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function minTimeForDate(slotDate) {
+  if (slotDate !== todayStr()) return undefined;
+  const min = new Date(Date.now() + 60 * 60 * 1000);
+  return `${pad(min.getHours())}:${pad(min.getMinutes())}`;
+}
 
 export default function AvailabilitySlots() {
   const [slots, setSlots] = useState([]);
@@ -25,7 +41,7 @@ export default function AvailabilitySlots() {
       setForm({ slot_date: "", start_time: "", end_time: "" });
       loadSlots();
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to create slot.");
+      setError(getErrorMessage(err, "Failed to create slot."));
     } finally {
       setSubmitting(false);
     }
@@ -36,13 +52,13 @@ export default function AvailabilitySlots() {
       await api.delete(`/api/v1/availability/${id}`);
       setSlots((prev) => prev.filter((s) => s.id !== id));
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to delete slot.");
+      setError(getErrorMessage(err, "Failed to delete slot."));
     }
   };
 
   return (
     <Layout>
-      <div className="max-w-2xl">
+      <div className="max-w-2xl mx-auto">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">Availability Slots</h2>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 mb-6 space-y-4">
@@ -50,12 +66,29 @@ export default function AvailabilitySlots() {
           {error && <p className="text-red-600 text-sm">{error}</p>}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
-            <input type="date" value={form.slot_date} onChange={(e) => setForm((f) => ({ ...f, slot_date: e.target.value }))} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+            <input
+              type="date"
+              value={form.slot_date}
+              min={todayStr()}
+              onChange={(e) => setForm((f) => ({ ...f, slot_date: e.target.value, start_time: "" }))}
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Start time</label>
-              <input type="time" value={form.start_time} onChange={(e) => setForm((f) => ({ ...f, start_time: e.target.value }))} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+              <input
+                type="time"
+                value={form.start_time}
+                min={minTimeForDate(form.slot_date)}
+                onChange={(e) => setForm((f) => ({ ...f, start_time: e.target.value }))}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              {form.slot_date === todayStr() && (
+                <p className="text-xs text-gray-400 mt-1">Must be at least 1 hour from now.</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">End time</label>

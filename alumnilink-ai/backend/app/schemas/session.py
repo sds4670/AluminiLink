@@ -20,6 +20,7 @@ class MySessionResponse(BaseModel):
     end_time: time
     status: SessionStatus
     has_feedback: bool = False
+    meeting_link: Optional[str] = None
 
 
 class IncomingSessionResponse(BaseModel):
@@ -31,6 +32,11 @@ class IncomingSessionResponse(BaseModel):
     start_time: time
     end_time: time
     status: SessionStatus
+    meeting_link: Optional[str] = None
+
+
+class SessionMeetingLinkUpdate(BaseModel):
+    meeting_link: str
 
 
 class SessionResponse(BaseModel):

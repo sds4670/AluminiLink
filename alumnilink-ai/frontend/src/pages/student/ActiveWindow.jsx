@@ -4,6 +4,7 @@ import Layout from "../../components/layout/Layout";
 import CountdownTimer from "../../components/ui/CountdownTimer";
 import api from "../../api/axios";
 import { format } from "date-fns";
+import { getErrorMessage } from "../../utils";
 
 export default function ActiveWindow() {
   const { windowId } = useParams();
@@ -16,7 +17,7 @@ export default function ActiveWindow() {
   const load = () => {
     api.get(`/api/v1/windows/${windowId}`)
       .then((res) => setWindow(res.data))
-      .catch((err) => setError(err.response?.data?.detail || "Window not found."))
+      .catch((err) => setError(getErrorMessage(err, "Window not found.")))
       .finally(() => setLoading(false));
   };
 
@@ -29,7 +30,7 @@ export default function ActiveWindow() {
       await api.post("/api/v1/sessions/book", { window_id: Number(windowId), slot_id: slotId });
       navigate("/student/sessions");
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to book slot.");
+      setError(getErrorMessage(err, "Failed to book slot."));
       setBookingSlotId(null);
       load();
     }
@@ -43,7 +44,7 @@ export default function ActiveWindow() {
 
   return (
     <Layout>
-      <div className="max-w-3xl">
+      <div className="max-w-3xl mx-auto">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
           <div className="flex items-center justify-between">
             <div>

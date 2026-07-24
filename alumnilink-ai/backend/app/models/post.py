@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import ForeignKey, DateTime, Enum as SAEnum, Text, Boolean, Float, func
+from sqlalchemy import ForeignKey, DateTime, Enum as SAEnum, Text, Boolean, Float, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -29,6 +29,7 @@ class Post(Base):
     author_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     post_type: Mapped[PostType] = mapped_column(SAEnum(PostType), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    link_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     moderation_status: Mapped[ModerationStatus] = mapped_column(SAEnum(ModerationStatus), default=ModerationStatus.pending_review)
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     toxicity_score: Mapped[Optional[float]] = mapped_column(Float)

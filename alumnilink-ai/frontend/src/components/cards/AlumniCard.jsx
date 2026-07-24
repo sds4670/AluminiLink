@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import MatchBadge from "../ui/MatchBadge";
 
-export default function AlumniCard({ alumni }) {
+export default function AlumniCard({ alumni, requestStatus = null }) {
   const topSkills = (alumni.skills || []).slice(0, 3);
 
   return (
@@ -38,12 +38,31 @@ export default function AlumniCard({ alumni }) {
         >
           View Profile
         </Link>
-        <Link
-          to={`/student/request/${alumni.user_id}`}
-          className="flex-1 text-center px-3 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-        >
-          Connect
-        </Link>
+        {requestStatus === "pending" && (
+          <span
+            title="You already have a pending request with this alumnus"
+            className="flex-1 text-center px-3 py-2 text-sm bg-gray-100 text-gray-400 rounded-lg cursor-not-allowed"
+          >
+            Request Pending
+          </span>
+        )}
+        {requestStatus === "accepted" && (
+          <Link
+            to="/student/requests"
+            title="You're already connected — continue in chat"
+            className="flex-1 text-center px-3 py-2 text-sm bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+          >
+            Connected — Chat
+          </Link>
+        )}
+        {!requestStatus && (
+          <Link
+            to={`/student/request/${alumni.user_id}`}
+            className="flex-1 text-center px-3 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+          >
+            Connect
+          </Link>
+        )}
       </div>
     </div>
   );

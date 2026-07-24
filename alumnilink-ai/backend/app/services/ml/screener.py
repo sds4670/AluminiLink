@@ -1,4 +1,16 @@
+import re
 from typing import Dict, Any
+
+
+def _contains(text: str, phrase: str) -> bool:
+    """
+    Word-boundary match, not a raw substring check. Plain `phrase in text`
+    false-positives badly here: "yo" (meant to catch the greeting "yo") is a
+    substring of "your"/"you", so it silently penalised the tone of almost
+    every personalised message ("your journey", "you work"); "sup" is a
+    substring of "support"/"suppose" the same way.
+    """
+    return re.search(r"\b" + re.escape(phrase) + r"\b", text) is not None
 
 
 def screen_message(message: str) -> dict:
@@ -6,47 +18,63 @@ def screen_message(message: str) -> dict:
     Score an outreach message on 4 dimensions (intent, professional tone,
     personalisation, message quality), each weighted 0.25, for a 0.0-1.0
     composite. Pass threshold = 0.6.
+
+    Calibrated for how students actually write a first message, not a
+    templated form letter: one genuine intent word and one genuine
+    personalisation phrase now earn full credit on those dimensions (was 3
+    and 2 matches respectively), and a sincere ~20-word message no longer
+    scores zero on quality (was a 30-word floor). "job" was removed from the
+    unprofessional-tone penalty — wanting career/job guidance is the entire
+    point of this platform, penalising the word was never correct.
     """
     scores = {}
+    message_lower = message.lower()
 
     # Check 1 — Intent (weight 0.25)
-    # Does the message have a clear mentorship ask?
+    # Does the message have a clear mentorship ask? One genuine signal is
+    # enough — real messages rarely repeat the same kind of word 3 times.
     intent_keywords = [
-        "mentorship", "guidance", "advice", "session",
-        "career", "discuss", "learn", "experience",
-        "opportunity", "connect", "schedule", "meeting"
+        "mentorship", "guidance", "advice", "session", "career", "discuss",
+        "learn", "experience", "opportunity", "connect", "schedule", "meeting",
+        "chat", "talk", "call", "insight", "insights", "tips", "path", "journey",
+        "transition", "break into", "breaking into", "pick your brain",
+        "guide", "mentor", "understand", "curious about",
     ]
-    matched = sum(1 for k in intent_keywords if k in message.lower())
-    scores["intent"] = min(matched / 3, 1.0) * 0.25
+    matched = sum(1 for k in intent_keywords if _contains(message_lower, k))
+    scores["intent"] = 0.25 if matched >= 1 else 0.0
 
     # Check 2 — Professional Tone (weight 0.25)
-    # No slang, casual openers, or demanding language
+    # Only genuinely demanding/pushy language is penalised now. Casual
+    # openers ("hey") and the word "job" are normal, legitimate language for
+    # this platform, not a tone problem.
     unprofessional = [
-        "hey", "hi there", "sup", "yo", "gimme",
-        "asap", "urgent", "immediately", "job",
-        "referral", "refer me", "get me"
+        "sup", "yo", "gimme", "asap", "urgent", "immediately",
+        "refer me", "get me",
     ]
-    penalty = sum(1 for u in unprofessional if u in message.lower())
+    penalty = sum(1 for u in unprofessional if _contains(message_lower, u))
     scores["professional_tone"] = max(0.25 - (penalty * 0.05), 0.0)
 
     # Check 3 — Personalisation (weight 0.25)
-    # Does message reference the alumni specifically?
+    # Does the message reference the alumni specifically? One real signal is
+    # enough — expecting two separate "your X" phrases in one short message
+    # was the strictest, least natural part of the old scoring.
     personal_signals = [
-        "your experience", "your background",
-        "your work", "your role", "your company",
-        "your profile", "your journey", "your career",
-        "you have", "you work", "your field",
-        "your expertise", "your industry"
+        "your experience", "your background", "your work", "your role",
+        "your company", "your profile", "your journey", "your career",
+        "you have", "you work", "your field", "your expertise",
+        "your industry", "your team", "you're", "you are", "saw that you",
+        "saw you", "noticed you", "given your", "based on your", "since you",
     ]
-    matched_p = sum(1 for p in personal_signals if p in message.lower())
-    scores["personalisation"] = min(matched_p / 2, 1.0) * 0.25
+    matched_p = sum(1 for p in personal_signals if _contains(message_lower, p))
+    scores["personalisation"] = 0.25 if matched_p >= 1 else 0.0
 
     # Check 4 — Message Quality (weight 0.25)
-    # Word count minimum 30, penalise very short messages
+    # A short but sincere message (15-29 words) now earns partial credit
+    # instead of zero; 30+ words (was 50) earns full credit.
     word_count = len(message.split())
-    if word_count >= 50:
+    if word_count >= 30:
         quality = 0.25
-    elif word_count >= 30:
+    elif word_count >= 15:
         quality = 0.15
     else:
         quality = 0.0
@@ -73,7 +101,7 @@ def screen_message(message: str) -> dict:
         )
     if scores["message_quality"] < 0.15:
         suggestions.append(
-            "Write at least 30 words. Give enough context "
+            "Write at least 15 words. Give enough context "
             "about yourself and your goals."
         )
 

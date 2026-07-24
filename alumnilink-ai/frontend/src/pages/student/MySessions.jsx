@@ -3,6 +3,7 @@ import Layout from "../../components/layout/Layout";
 import StatusBadge from "../../components/ui/StatusBadge";
 import api from "../../api/axios";
 import { format } from "date-fns";
+import { getErrorMessage } from "../../utils";
 
 const TABS = [
   { key: "upcoming", label: "Upcoming", statuses: ["scheduled"] },
@@ -23,7 +24,7 @@ function FeedbackModal({ session, onClose, onSubmitted }) {
       await api.post(`/api/v1/sessions/${session.id}/feedback`, { rating, comment });
       onSubmitted();
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to submit feedback.");
+      setError(getErrorMessage(err, "Failed to submit feedback."));
     } finally {
       setSubmitting(false);
     }
@@ -82,7 +83,7 @@ export default function MySessions() {
 
   return (
     <Layout>
-      <div className="max-w-2xl">
+      <div className="max-w-2xl mx-auto">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">My Sessions</h2>
 
         <div className="flex gap-1 mb-6 border-b border-gray-200">
@@ -111,6 +112,22 @@ export default function MySessions() {
               </div>
               <p className="text-sm text-gray-600">{format(new Date(s.slot_date), "MMM d, yyyy")}</p>
               <p className="text-xs text-gray-400 mt-1">{s.start_time} – {s.end_time}</p>
+              {s.status === "scheduled" && (
+                s.meeting_link ? (
+                  <a
+                    href={s.meeting_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 inline-block px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
+                  >
+                    Join Meeting →
+                  </a>
+                ) : (
+                  <p className="mt-3 text-xs text-gray-400">
+                    Your mentor hasn't added a meeting link yet — check the chat for details closer to the time.
+                  </p>
+                )
+              )}
               {s.status === "completed" && !s.has_feedback && (
                 <button
                   onClick={() => setFeedbackSession(s)}

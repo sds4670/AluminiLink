@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import api from "../../api/axios";
 import { format } from "date-fns";
+import { getErrorMessage } from "../../utils";
 
 const POLL_INTERVAL_MS = 7000;
 
@@ -22,7 +23,7 @@ export default function ChatThread({ requestId, currentUserId, otherPartyName })
       const res = await api.get(`/api/v1/requests/${requestId}/messages`);
       setMessages(res.data);
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to load messages.");
+      setError(getErrorMessage(err, "Failed to load messages."));
     } finally {
       setLoading(false);
     }
@@ -49,7 +50,7 @@ export default function ChatThread({ requestId, currentUserId, otherPartyName })
       setMessages((prev) => [...prev, res.data]);
       setContent("");
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to send message.");
+      setError(getErrorMessage(err, "Failed to send message."));
     } finally {
       setSending(false);
     }

@@ -20,7 +20,7 @@ export default function AuditLogs() {
 
   return (
     <Layout>
-      <div className="max-w-5xl">
+      <div className="max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-gray-900">Audit Logs</h2>
           <select
@@ -34,31 +34,40 @@ export default function AuditLogs() {
           </select>
         </div>
         {loading && <p className="text-gray-500">Loading...</p>}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium">Time</th>
-                <th className="text-left px-4 py-3 font-medium">Actor</th>
-                <th className="text-left px-4 py-3 font-medium">Action</th>
-                <th className="text-left px-4 py-3 font-medium">Resource</th>
-                <th className="text-left px-4 py-3 font-medium">Details</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {logs.map((log) => (
-                <tr key={log.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{format(new Date(log.created_at), "MMM d, HH:mm")}</td>
-                  <td className="px-4 py-3 text-gray-600">{log.actor_id ? `#${log.actor_id}` : "system"}</td>
-                  <td className="px-4 py-3 font-medium text-gray-900 capitalize">{log.action.replace(/_/g, " ")}</td>
-                  <td className="px-4 py-3 text-gray-500">{log.resource_type} {log.resource_id && `#${log.resource_id}`}</td>
-                  <td className="px-4 py-3 text-gray-400 text-xs">{log.details}</td>
+
+        {!loading && logs.length === 0 && (
+          <div className="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
+            <p className="text-lg">No audit logs{action ? ` for "${action.replace(/_/g, " ")}"` : ""}.</p>
+            <p className="text-sm mt-1">{action ? "Try a different action filter." : "Admin and system actions will show up here."}</p>
+          </div>
+        )}
+
+        {!loading && logs.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium">Time</th>
+                  <th className="text-left px-4 py-3 font-medium">Actor</th>
+                  <th className="text-left px-4 py-3 font-medium">Action</th>
+                  <th className="text-left px-4 py-3 font-medium">Resource</th>
+                  <th className="text-left px-4 py-3 font-medium">Details</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {!loading && logs.length === 0 && <p className="text-center py-8 text-gray-400">No audit logs yet.</p>}
-        </div>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {logs.map((log) => (
+                  <tr key={log.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{format(new Date(log.created_at), "MMM d, HH:mm")}</td>
+                    <td className="px-4 py-3 text-gray-600">{log.actor_id ? `#${log.actor_id}` : "system"}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900 capitalize">{log.action.replace(/_/g, " ")}</td>
+                    <td className="px-4 py-3 text-gray-500">{log.resource_type} {log.resource_id && `#${log.resource_id}`}</td>
+                    <td className="px-4 py-3 text-gray-400 text-xs">{log.details}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </Layout>
   );

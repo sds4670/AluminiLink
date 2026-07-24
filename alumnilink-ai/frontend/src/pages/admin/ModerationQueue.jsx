@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import Layout from "../../components/layout/Layout";
 import api from "../../api/axios";
 import { format } from "date-fns";
+import { getErrorMessage } from "../../utils";
 
 export default function ModerationQueue() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [confirming, setConfirming] = useState(null); // { id, action: "approve" | "reject" }
 
   const load = () => {
     api.get("/api/v1/admin/moderation/queue").then((res) => setPosts(res.data)).finally(() => setLoading(false));
@@ -18,9 +20,10 @@ export default function ModerationQueue() {
     setError("");
     try {
       await api.patch(`/api/v1/admin/moderation/${id}/approve`);
+      setConfirming(null);
       load();
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to approve post.");
+      setError(getErrorMessage(err, "Failed to approve post."));
     }
   };
 
@@ -28,15 +31,16 @@ export default function ModerationQueue() {
     setError("");
     try {
       await api.patch(`/api/v1/admin/moderation/${id}/reject`);
+      setConfirming(null);
       load();
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to reject post.");
+      setError(getErrorMessage(err, "Failed to reject post."));
     }
   };
 
   return (
     <Layout>
-      <div className="max-w-4xl">
+      <div className="max-w-4xl mx-auto">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">Moderation Queue</h2>
         {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
         {loading && <p className="text-gray-500">Loading...</p>}
@@ -59,10 +63,25 @@ export default function ModerationQueue() {
                   <p className="text-sm text-gray-700 mt-2">{post.content}</p>
                   <p className="text-xs text-gray-400 mt-2">{format(new Date(post.created_at), "PPp")}</p>
                 </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  <button onClick={() => approve(post.id)} className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700">Approve</button>
-                  <button onClick={() => reject(post.id)} className="px-3 py-1.5 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600">Reject</button>
-                </div>
+                {confirming?.id === post.id ? (
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-xs text-gray-500">{confirming.action === "approve" ? "Approve" : "Reject"} this post?</span>
+                    <button
+                      onClick={() => (confirming.action === "approve" ? approve(post.id) : reject(post.id))}
+                      className={`px-3 py-1.5 text-xs text-white rounded-lg ${confirming.action === "approve" ? "bg-green-600 hover:bg-green-700" : "bg-red-500 hover:bg-red-600"}`}
+                    >
+                      Confirm
+                    </button>
+                    <button onClick={() => setConfirming(null)} className="px-3 py-1.5 text-xs border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50">
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button onClick={() => setConfirming({ id: post.id, action: "approve" })} className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700">Approve</button>
+                    <button onClick={() => setConfirming({ id: post.id, action: "reject" })} className="px-3 py-1.5 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600">Reject</button>
+                  </div>
+                )}
               </div>
             </div>
           ))}

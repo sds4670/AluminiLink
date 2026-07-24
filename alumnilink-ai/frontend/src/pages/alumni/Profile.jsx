@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Layout from "../../components/layout/Layout";
 import api from "../../api/axios";
 import useAuthStore from "../../store/authStore";
+import { getErrorMessage } from "../../utils";
 
 const INDUSTRIES = ["Technology", "Finance", "Banking", "Healthcare", "E-commerce", "Consulting", "Automotive", "Cloud Computing", "Other"];
 
@@ -19,22 +20,31 @@ export default function AlumniProfile() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [isEditing, setIsEditing] = useState(false);
 
-  if (user && user.verification_status !== "verified") {
-    return (
-      <Layout>
-        <div className="max-w-2xl">
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-amber-800">
-            <h2 className="font-semibold mb-1">Verification pending</h2>
-            <p className="text-sm">
-              Your alumni account is awaiting admin verification. You'll be able to create your
-              mentor profile once an admin verifies your account.
-            </p>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
+  useEffect(() => {
+    // Deliberately fetched regardless of verification_status — a pending
+    // alumnus needs to be able to see/edit what they've already filled in,
+    // since this is exactly what an admin reviews to verify them.
+    api.get("/api/v1/profiles/alumni/me")
+      .then((res) => {
+        const p = res.data;
+        setForm({
+          company: p.company,
+          designation: p.designation,
+          industry: p.industry,
+          experience_years: p.experience_years,
+          about_me: p.about_me,
+        });
+        setSkills(p.skills || []);
+        setIsEditing(true);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const isPending = user && user.verification_status === "pending";
 
   const addSkill = (e) => {
     if (e.key !== "Enter") return;
@@ -54,33 +64,65 @@ export default function AlumniProfile() {
     e.preventDefault();
     setError("");
     setSuccess(false);
-    if (skills.length === 0) {
+
+    // Fold in whatever's still sitting in the skill box but wasn't committed
+    // with Enter — typing a skill and clicking Save should still count it.
+    let finalSkills = skills;
+    const pendingSkill = skillInput.trim();
+    if (pendingSkill && !skills.includes(pendingSkill)) {
+      finalSkills = [...skills, pendingSkill];
+      setSkills(finalSkills);
+      setSkillInput("");
+    }
+
+    if (finalSkills.length === 0) {
       setError("Add at least one skill.");
       return;
     }
     setSubmitting(true);
     try {
-      await api.post("/api/v1/profiles/alumni", {
-        ...form,
-        experience_years: Number(form.experience_years),
-        skills,
-      });
+      const payload = { ...form, experience_years: Number(form.experience_years), skills: finalSkills };
+      if (isEditing) {
+        await api.put("/api/v1/profiles/alumni/me", payload);
+      } else {
+        await api.post("/api/v1/profiles/alumni", payload);
+        setIsEditing(true);
+      }
       setSuccess(true);
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to save profile.");
+      setError(getErrorMessage(err, "Failed to save profile."));
     } finally {
       setSubmitting(false);
     }
   };
 
+  if (loading) {
+    return (
+      <Layout>
+        <div className="max-w-2xl mx-auto">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">My Mentor Profile</h2>
+          <p className="text-gray-400 text-sm">Loading...</p>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
-      <div className="max-w-2xl">
+      <div className="max-w-2xl mx-auto">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">My Mentor Profile</h2>
+
+        {isPending && (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+            Your account is awaiting admin verification. Fill this in fully and accurately — it's
+            what the admin reviews to verify you. You won't appear in student matches or be able
+            to post availability until you're verified.
+          </div>
+        )}
 
         {success && (
           <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-            Profile saved! Students will now see you in their AI-matched recommendations.
+            {isEditing ? "Profile updated! Students will see the new details in their matches." : "Profile saved! Students will now see you in their AI-matched recommendations."}
           </div>
         )}
         {error && (
@@ -174,7 +216,7 @@ export default function AlumniProfile() {
             disabled={submitting}
             className="px-4 py-2.5 bg-primary-600 text-white rounded-lg text-sm font-semibold hover:bg-primary-700 disabled:opacity-50"
           >
-            {submitting ? "Saving..." : "Save Profile"}
+            {submitting ? "Saving..." : isEditing ? "Update Profile" : "Save Profile"}
           </button>
         </form>
       </div>

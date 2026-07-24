@@ -32,6 +32,10 @@ class ConnectionRequestUpdate(BaseModel):
     rejection_reason: Optional[str] = None
 
 
+class RequestRejectBody(BaseModel):
+    reason: Optional[str] = None
+
+
 class ConnectionRequestResponse(BaseModel):
     id: int
     student_id: int
@@ -63,6 +67,9 @@ class MyRequestResponse(BaseModel):
     message: Optional[str]
     screening_score: Optional[float]
     window_id: Optional[int]
+    window_status: Optional[str] = None
+    session_status: Optional[str] = None
+    rejection_reason: Optional[str] = None
     created_at: datetime
 
 

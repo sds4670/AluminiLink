@@ -7,6 +7,7 @@ from app.models.post import PostType, ModerationStatus
 class PostCreate(BaseModel):
     content: str
     post_type: PostType
+    link_url: Optional[str] = None
 
 
 class ModerationResult(BaseModel):
@@ -23,6 +24,7 @@ class PostResponse(BaseModel):
     author_role: str
     post_type: PostType
     content: str
+    link_url: Optional[str] = None
     moderation_status: ModerationStatus
     created_at: datetime
     like_count: int = 0

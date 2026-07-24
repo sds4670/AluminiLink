@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Layout from "../../components/layout/Layout";
 import PostCard from "../../components/cards/PostCard";
+import useAuthStore from "../../store/authStore";
 import api from "../../api/axios";
 
 const MENTOR_TIERS = [
@@ -17,6 +18,7 @@ function mentorTier(completedSessions) {
 }
 
 export default function AlumniDashboard() {
+  const user = useAuthStore((s) => s.user);
   const [stats, setStats] = useState({ requests: 0, upcoming: 0, completed: 0, slots: 0 });
   const [feedPreview, setFeedPreview] = useState([]);
   const [mentorScore, setMentorScore] = useState(null);
@@ -75,7 +77,7 @@ export default function AlumniDashboard() {
 
   return (
     <Layout>
-      <div className="max-w-4xl">
+      <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-gray-900">Alumni Dashboard</h2>
           <div className="flex items-center gap-3">
@@ -87,6 +89,19 @@ export default function AlumniDashboard() {
             )}
           </div>
         </div>
+
+        {user?.verification_status === "pending" && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 flex items-center justify-between gap-4 flex-wrap">
+            <p className="text-sm">
+              <span className="font-semibold">Verification pending.</span> Complete your mentor
+              profile so an admin has something real to verify you against — you won't appear in
+              student matches or unlock availability/requests until then.
+            </p>
+            <Link to="/alumni/profile" className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700 whitespace-nowrap">
+              Complete My Profile
+            </Link>
+          </div>
+        )}
 
         <div className="grid grid-cols-3 gap-4 mb-8">
           {cards.map((c) => (

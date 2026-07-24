@@ -36,7 +36,7 @@ export default function Sidebar() {
   const links = linkMap[role] || [];
 
   return (
-    <aside className="w-64 bg-primary-900 text-white flex flex-col">
+    <aside className="w-64 h-full bg-primary-900 text-white flex flex-col">
       <div className="p-6 border-b border-primary-700">
         <h1 className="text-xl font-bold tracking-tight">AlumniLink AI</h1>
         <p className="text-primary-300 text-xs mt-1 capitalize">{role} portal</p>

@@ -23,6 +23,22 @@ def _issue_tokens(user: User) -> tuple[str, str]:
     return access_token, refresh_token
 
 
+def _check_account_not_blocked(user: User) -> None:
+    """
+    Shared login/refresh gate. Banned users are always blocked. A rejected
+    alumnus is also blocked here — an admin actively reviewed and denied
+    them, which is a stronger signal than "not yet reviewed" (pending, which
+    still allows login) and should behave like a ban, not a soft limit.
+    """
+    if user.status == UserStatus.banned:
+        raise HTTPException(status_code=403, detail="Account is banned")
+    if user.role == UserRole.alumni and user.verification_status == VerificationStatus.rejected:
+        raise HTTPException(
+            status_code=403,
+            detail="Your alumni application was rejected. Contact your university's alumni relations office if you believe this is a mistake.",
+        )
+
+
 async def register_user(data: RegisterRequest, db: AsyncSession) -> TokenResponse:
     result = await db.execute(select(User).where(User.email == data.email))
     if result.scalar_one_or_none():
@@ -99,8 +115,7 @@ async def authenticate_user(data: LoginRequest, db: AsyncSession) -> TokenRespon
             detail="Invalid credentials",
         )
 
-    if user.status == UserStatus.banned:
-        raise HTTPException(status_code=403, detail="Account is banned")
+    _check_account_not_blocked(user)
 
     access_token, refresh_token = _issue_tokens(user)
     return TokenResponse(
@@ -125,8 +140,7 @@ async def refresh_access_token(refresh_token: str, db: AsyncSession) -> AccessTo
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
-    if user.status == UserStatus.banned:
-        raise HTTPException(status_code=403, detail="Account is banned")
+    _check_account_not_blocked(user)
 
     # Rotate both tokens so a stolen refresh token has a shrinking window of usefulness.
     new_access_token, new_refresh_token = _issue_tokens(user)

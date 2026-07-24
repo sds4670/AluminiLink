@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Layout from "../../components/layout/Layout";
 import api from "../../api/axios";
+import { getErrorMessage } from "../../utils";
 
 const DEPARTMENTS = ["Data Science", "Computer Science", "Electronics", "Mechanical", "Commerce", "Business Administration"];
 const DEGREES = ["B.Sc", "B.Tech", "BBA", "M.Sc", "MBA", "M.Tech"];
@@ -18,6 +19,26 @@ export default function StudentProfile() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    api.get("/api/v1/profiles/student/me")
+      .then((res) => {
+        const p = res.data;
+        setForm({
+          department: p.department,
+          degree: p.degree,
+          graduation_year: p.graduation_year,
+          career_goal: p.career_goal,
+          profile_description: p.profile_description,
+        });
+        setSkills(p.skills || []);
+        setIsEditing(true);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   const addSkill = (e) => {
     if (e.key !== "Enter") return;
@@ -37,33 +58,57 @@ export default function StudentProfile() {
     e.preventDefault();
     setError("");
     setSuccess(false);
-    if (skills.length === 0) {
+
+    // Fold in whatever's still sitting in the skill box but wasn't committed
+    // with Enter — typing a skill and clicking Save should still count it.
+    let finalSkills = skills;
+    const pendingSkill = skillInput.trim();
+    if (pendingSkill && !skills.includes(pendingSkill)) {
+      finalSkills = [...skills, pendingSkill];
+      setSkills(finalSkills);
+      setSkillInput("");
+    }
+
+    if (finalSkills.length === 0) {
       setError("Add at least one skill.");
       return;
     }
     setSubmitting(true);
     try {
-      await api.post("/api/v1/profiles/student", {
-        ...form,
-        graduation_year: Number(form.graduation_year),
-        skills,
-      });
+      const payload = { ...form, graduation_year: Number(form.graduation_year), skills: finalSkills };
+      if (isEditing) {
+        await api.put("/api/v1/profiles/student/me", payload);
+      } else {
+        await api.post("/api/v1/profiles/student", payload);
+        setIsEditing(true);
+      }
       setSuccess(true);
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to save profile.");
+      setError(getErrorMessage(err, "Failed to save profile."));
     } finally {
       setSubmitting(false);
     }
   };
 
+  if (loading) {
+    return (
+      <Layout>
+        <div className="max-w-2xl mx-auto">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">My Profile</h2>
+          <p className="text-gray-400 text-sm">Loading...</p>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
-      <div className="max-w-2xl">
+      <div className="max-w-2xl mx-auto">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">My Profile</h2>
 
         {success && (
           <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-            Profile saved! You can now browse AI-matched alumni.
+            {isEditing ? "Profile updated! Your matches will reflect the new details." : "Profile saved! You can now browse AI-matched alumni."}
           </div>
         )}
         {error && (
@@ -156,7 +201,7 @@ export default function StudentProfile() {
             disabled={submitting}
             className="px-4 py-2.5 bg-primary-600 text-white rounded-lg text-sm font-semibold hover:bg-primary-700 disabled:opacity-50"
           >
-            {submitting ? "Saving..." : "Save Profile"}
+            {submitting ? "Saving..." : isEditing ? "Update Profile" : "Save Profile"}
           </button>
         </form>
       </div>

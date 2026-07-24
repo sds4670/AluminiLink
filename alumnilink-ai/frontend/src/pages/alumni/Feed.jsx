@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Layout from "../../components/layout/Layout";
 import PostCard from "../../components/cards/PostCard";
 import api from "../../api/axios";
+import { getErrorMessage } from "../../utils";
 
 const POST_TYPE_OPTIONS = ["job", "internship", "resource", "announcement"];
 
@@ -17,6 +18,7 @@ const FILTER_TABS = [
 function PostForm({ onCreated }) {
   const [content, setContent] = useState("");
   const [postType, setPostType] = useState(POST_TYPE_OPTIONS[0]);
+  const [linkUrl, setLinkUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -25,15 +27,19 @@ function PostForm({ onCreated }) {
     setError("");
     setLoading(true);
     try {
-      const res = await api.post("/api/v1/feed/posts", { content, post_type: postType });
+      const res = await api.post("/api/v1/feed/posts", {
+        content,
+        post_type: postType,
+        link_url: linkUrl.trim() || null,
+      });
       if (res.data.post.moderation_status === "pending_review") {
         setError("Your post was flagged for admin review and will appear once approved.");
       }
       setContent("");
+      setLinkUrl("");
       onCreated();
     } catch (err) {
-      const detail = err.response?.data?.detail;
-      setError(detail?.reason || "Failed to create post.");
+      setError(getErrorMessage(err, "Failed to create post."));
     } finally {
       setLoading(false);
     }
@@ -51,6 +57,13 @@ function PostForm({ onCreated }) {
         rows={3}
         placeholder="Share a job, internship, resource, or announcement with the community..."
         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-500"
+      />
+      <input
+        type="url"
+        value={linkUrl}
+        onChange={(e) => setLinkUrl(e.target.value)}
+        placeholder="Link (optional) — e.g. a job posting, resource, or registration page"
+        className="w-full mt-2 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
       />
       <div className="flex items-center justify-between mt-3">
         <select
@@ -87,7 +100,7 @@ export default function Feed() {
 
   return (
     <Layout>
-      <div className="max-w-2xl">
+      <div className="max-w-2xl mx-auto">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">Community Feed</h2>
         <PostForm onCreated={loadPosts} />
 
@@ -108,7 +121,7 @@ export default function Feed() {
         {loading && <p className="text-gray-500">Loading...</p>}
         {!loading && posts.length === 0 && <p className="text-gray-400">No posts yet.</p>}
         <div className="space-y-4">
-          {posts.map((post) => <PostCard key={post.id} post={post} />)}
+          {posts.map((post) => <PostCard key={post.id} post={post} onDeleted={loadPosts} />)}
         </div>
       </div>
     </Layout>

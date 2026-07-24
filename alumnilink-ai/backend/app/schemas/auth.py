@@ -3,6 +3,13 @@ from typing import Optional
 from pydantic import BaseModel, EmailStr, field_validator, model_validator
 from app.models.user import UserRole
 
+# Students must prove they're currently enrolled by registering with the
+# university's own domain. Alumni are NOT restricted to this (or any
+# specific) domain — many no longer have an active university mailbox
+# after graduating, so their identity is instead verified by an admin
+# checking their register_number against the official roster (Module 9).
+STUDENT_EMAIL_DOMAIN = "christuniversity.in"
+
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -35,6 +42,10 @@ class RegisterRequest(BaseModel):
             raise ValueError("register_number is required for alumni registration")
         if self.role == UserRole.admin:
             raise ValueError("Admin accounts cannot be self-registered")
+        if self.role == UserRole.student:
+            domain = self.email.split("@")[-1].lower()
+            if domain != STUDENT_EMAIL_DOMAIN:
+                raise ValueError(f"Students must register with a @{STUDENT_EMAIL_DOMAIN} email address")
         return self
 
 

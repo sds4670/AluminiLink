@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.core.security import decode_access_token
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, VerificationStatus
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 _optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
@@ -55,6 +55,10 @@ async def get_optional_user(
 async def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
     if current_user.status != "active":
         raise HTTPException(status_code=400, detail="Inactive user")
+    # An already-issued token for a since-rejected alumnus must die immediately,
+    # not just at their next login/refresh attempt (see auth_service._check_account_not_blocked).
+    if current_user.role == UserRole.alumni and current_user.verification_status == VerificationStatus.rejected:
+        raise HTTPException(status_code=403, detail="Your alumni application was rejected.")
     return current_user
 
 

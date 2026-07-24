@@ -22,6 +22,7 @@ from app.schemas.session import (
     IncomingSessionResponse,
     SessionFeedbackCreate,
     SessionFeedbackResponse,
+    SessionMeetingLinkUpdate,
 )
 
 router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
@@ -143,6 +144,7 @@ async def get_my_sessions(
             end_time=slot.end_time,
             status=s.status,
             has_feedback=s.id in reviewed_ids,
+            meeting_link=s.meeting_link,
         )
         for s, slot, user in rows
     ]
@@ -211,9 +213,47 @@ async def get_incoming_sessions(
             start_time=slot.start_time,
             end_time=slot.end_time,
             status=s.status,
+            meeting_link=s.meeting_link,
         )
         for s, slot, user in result.all()
     ]
+
+
+@router.patch("/{session_id}/meeting-link", response_model=SessionResponse)
+async def set_meeting_link(
+    session_id: int,
+    data: SessionMeetingLinkUpdate,
+    current_user: User = Depends(require_alumni),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Alumni-only: attach a video-call link (Zoom/Meet/etc.) or any other
+    "how to join" info to a booked-but-not-yet-completed session, so the
+    student sees it on their side without the two of you having to
+    negotiate it entirely over chat.
+
+    curl -X PATCH http://localhost:8000/api/v1/sessions/1/meeting-link \\
+      -H "Authorization: Bearer <alumni access_token>" -H "Content-Type: application/json" \\
+      -d '{"meeting_link":"https://meet.google.com/abc-defg-hij"}'
+    """
+    alumni_result = await db.execute(select(AlumniProfile).where(AlumniProfile.user_id == current_user.id))
+    alumni = alumni_result.scalar_one_or_none()
+    if not alumni:
+        raise HTTPException(status_code=400, detail="Alumni profile not found")
+
+    result = await db.execute(
+        select(Session).where(Session.id == session_id, Session.alumni_id == alumni.id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status != SessionStatus.scheduled:
+        raise HTTPException(status_code=400, detail="Can only set a meeting link on a scheduled session")
+
+    session.meeting_link = data.meeting_link.strip()
+    await db.flush()
+    await db.refresh(session)
+    return session
 
 
 @router.post("/{session_id}/feedback", response_model=SessionFeedbackResponse, status_code=201)

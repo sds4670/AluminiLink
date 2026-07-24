@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import Layout from "../../components/layout/Layout";
 import MatchBadge from "../../components/ui/MatchBadge";
 import api from "../../api/axios";
+import { isRequestStillBlocking } from "../../utils";
 
 const WHY_RECOMMENDED_LABELS = [
   "Similar Career Goal",
@@ -23,6 +24,7 @@ export default function AlumniProfile() {
   const [profile, setProfile] = useState(null);
   const [matchScore, setMatchScore] = useState(null);
   const [responsePrediction, setResponsePrediction] = useState(null);
+  const [requestStatus, setRequestStatus] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,11 +32,16 @@ export default function AlumniProfile() {
       api.get(`/api/v1/profiles/alumni/${id}`),
       api.get(`/api/v1/matching/alumni/${id}/score`).catch(() => null),
       api.get(`/api/v1/predict/response/${id}`).catch(() => null),
+      api.get("/api/v1/requests/my").catch(() => ({ data: [] })),
     ])
-      .then(([profileRes, scoreRes, predictRes]) => {
+      .then(([profileRes, scoreRes, predictRes, reqRes]) => {
         setProfile(profileRes.data);
         if (scoreRes) setMatchScore(scoreRes.data.match_score);
         if (predictRes) setResponsePrediction(predictRes.data);
+        const existing = reqRes.data.find(
+          (r) => r.alumni_user_id === Number(id) && isRequestStillBlocking(r)
+        );
+        setRequestStatus(existing?.status || null);
       })
       .finally(() => setLoading(false));
   }, [id]);
@@ -44,7 +51,7 @@ export default function AlumniProfile() {
 
   return (
     <Layout>
-      <div className="max-w-2xl space-y-6">
+      <div className="max-w-2xl mx-auto space-y-6">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8">
           <div className="flex items-center gap-5 mb-6">
             <div className="w-20 h-20 rounded-full bg-accent-500 text-white flex items-center justify-center text-3xl font-bold">
@@ -89,12 +96,31 @@ export default function AlumniProfile() {
             </div>
           )}
 
-          <button
-            onClick={() => navigate(`/student/request/${id}`)}
-            className="inline-block px-6 py-2.5 bg-primary-600 text-white rounded-xl font-semibold text-sm hover:bg-primary-700 transition-colors"
-          >
-            Send Mentorship Request
-          </button>
+          {requestStatus === "pending" && (
+            <span
+              title="You already have a pending request with this alumnus"
+              className="inline-block px-6 py-2.5 bg-gray-100 text-gray-400 rounded-xl font-semibold text-sm cursor-not-allowed"
+            >
+              Request Pending
+            </span>
+          )}
+          {requestStatus === "accepted" && (
+            <button
+              onClick={() => navigate("/student/requests")}
+              title="You're already connected — continue in chat"
+              className="inline-block px-6 py-2.5 bg-green-50 text-green-700 border border-green-200 rounded-xl font-semibold text-sm hover:bg-green-100 transition-colors"
+            >
+              Connected — Go to Chat
+            </button>
+          )}
+          {!requestStatus && (
+            <button
+              onClick={() => navigate(`/student/request/${id}`)}
+              className="inline-block px-6 py-2.5 bg-primary-600 text-white rounded-xl font-semibold text-sm hover:bg-primary-700 transition-colors"
+            >
+              Send Mentorship Request
+            </button>
+          )}
         </div>
 
         {matchScore != null && (

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.database import get_db
 from app.core.dependencies import require_student_or_alumni, get_optional_user
-from app.models.user import User
+from app.models.user import User, VerificationStatus
 from app.models.post import Post, PostType, ModerationStatus
 from app.models.post_moderation_log import PostModerationLog, ModerationAction
 from app.models.post_like import PostLike
@@ -21,6 +21,23 @@ from app.schemas.feed import (
 from app.services.ml.moderation import moderate_post
 
 router = APIRouter(prefix="/api/v1/feed", tags=["feed"])
+
+# Students post opportunities they're looking for (query/general/event/resource);
+# only alumni are in a position to actually offer a job or internship.
+ALUMNI_ONLY_POST_TYPES = {PostType.job, PostType.internship}
+
+
+def _require_verified_if_alumni(current_user: User) -> None:
+    """
+    An unverified alumnus can browse the feed but can't participate in it at
+    all (post, like, or comment) until an admin verifies their account —
+    same gate as profile creation and availability (Modules 2/9).
+    """
+    if current_user.role.value == "alumni" and current_user.verification_status != VerificationStatus.verified:
+        raise HTTPException(
+            status_code=403,
+            detail="Your alumni account must be admin-verified before you can participate in the community feed.",
+        )
 
 
 async def _post_response(post: Post, author: User, db: AsyncSession, viewer: Optional[User]) -> PostResponse:
@@ -39,6 +56,7 @@ async def _post_response(post: Post, author: User, db: AsyncSession, viewer: Opt
         author_role=author.role.value,
         post_type=post.post_type,
         content=post.content,
+        link_url=post.link_url,
         moderation_status=post.moderation_status,
         created_at=post.created_at,
         like_count=like_count or 0,
@@ -58,6 +76,14 @@ async def create_post(
       -H "Authorization: Bearer <access_token>" -H "Content-Type: application/json" \\
       -d '{"content":"Excited to share that our team is hiring summer interns for a data science project this year.","post_type":"internship"}'
     """
+    _require_verified_if_alumni(current_user)
+
+    if data.post_type in ALUMNI_ONLY_POST_TYPES and current_user.role.value != "alumni":
+        raise HTTPException(
+            status_code=403,
+            detail=f"Only alumni can post '{data.post_type.value}' listings.",
+        )
+
     result = moderate_post(data.content)
 
     if result["approved"]:
@@ -72,6 +98,7 @@ async def create_post(
         author_id=current_user.id,
         post_type=data.post_type,
         content=data.content,
+        link_url=data.link_url or None,
         moderation_status=moderation_status,
         toxicity_score=result["toxicity_score"],
     )
@@ -145,6 +172,8 @@ async def toggle_like(
     current_user: User = Depends(require_student_or_alumni),
     db: AsyncSession = Depends(get_db),
 ):
+    _require_verified_if_alumni(current_user)
+
     post_result = await db.execute(select(Post).where(Post.id == post_id))
     if not post_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Post not found")
@@ -172,6 +201,8 @@ async def create_comment(
     current_user: User = Depends(require_student_or_alumni),
     db: AsyncSession = Depends(get_db),
 ):
+    _require_verified_if_alumni(current_user)
+
     post_result = await db.execute(select(Post).where(Post.id == post_id))
     if not post_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Post not found")
@@ -215,3 +246,46 @@ async def list_comments(post_id: int, db: AsyncSession = Depends(get_db)):
         )
         for c, user in result.all()
     ]
+
+
+@router.delete("/posts/{post_id}/comments/{comment_id}", status_code=204)
+async def delete_comment(
+    post_id: int,
+    comment_id: int,
+    current_user: User = Depends(require_student_or_alumni),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    curl -X DELETE http://localhost:8000/api/v1/feed/posts/1/comments/1 \\
+      -H "Authorization: Bearer <access_token>"
+    """
+    result = await db.execute(
+        select(PostComment).where(PostComment.id == comment_id, PostComment.post_id == post_id)
+    )
+    comment = result.scalar_one_or_none()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if comment.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only delete your own comments")
+
+    await db.delete(comment)
+
+
+@router.delete("/posts/{post_id}", status_code=204)
+async def delete_post(
+    post_id: int,
+    current_user: User = Depends(require_student_or_alumni),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    curl -X DELETE http://localhost:8000/api/v1/feed/posts/1 \\
+      -H "Authorization: Bearer <access_token>"
+    """
+    result = await db.execute(select(Post).where(Post.id == post_id))
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only delete your own posts")
+
+    await db.delete(post)

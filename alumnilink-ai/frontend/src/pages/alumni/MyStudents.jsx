@@ -18,7 +18,7 @@ export default function MyStudents() {
 
   return (
     <Layout>
-      <div className="max-w-2xl">
+      <div className="max-w-2xl mx-auto">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">My Students</h2>
         {loading && <p className="text-gray-500">Loading...</p>}
         {!loading && requests.length === 0 && <p className="text-gray-400">No accepted mentees yet.</p>}

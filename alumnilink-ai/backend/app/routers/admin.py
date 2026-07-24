@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.core.dependencies import require_admin
 from app.models.user import User, UserRole, UserStatus, VerificationStatus
+from app.models.alumni_profile import AlumniProfile
 from app.models.post import Post, ModerationStatus
 from app.models.post_moderation_log import PostModerationLog, ModerationAction
 from app.models.audit_log import AuditLog
@@ -52,18 +53,51 @@ class SnapshotResponse(BaseModel):
     metrics: dict
 
 
-@router.get("/alumni/pending", response_model=List[UserResponse])
+class PendingAlumniResponse(BaseModel):
+    id: int
+    email: str
+    full_name: Optional[str] = None
+    register_number: Optional[str] = None
+    created_at: datetime
+    # None when the alumnus hasn't filled in their profile yet — an admin
+    # can't meaningfully verify someone with nothing to review.
+    company: Optional[str] = None
+    designation: Optional[str] = None
+    industry: Optional[str] = None
+    experience_years: Optional[int] = None
+    skills: Optional[List[str]] = None
+    about_me: Optional[str] = None
+
+
+@router.get("/alumni/pending", response_model=List[PendingAlumniResponse])
 async def list_pending_alumni(
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(User).where(
+        select(User, AlumniProfile)
+        .outerjoin(AlumniProfile, AlumniProfile.user_id == User.id)
+        .where(
             User.role == UserRole.alumni,
             User.verification_status == VerificationStatus.pending,
         )
     )
-    return result.scalars().all()
+    return [
+        PendingAlumniResponse(
+            id=user.id,
+            email=user.email,
+            full_name=user.full_name,
+            register_number=user.register_number,
+            created_at=user.created_at,
+            company=profile.company if profile else None,
+            designation=profile.designation if profile else None,
+            industry=profile.industry if profile else None,
+            experience_years=profile.experience_years if profile else None,
+            skills=profile.skills if profile else None,
+            about_me=profile.about_me if profile else None,
+        )
+        for user, profile in result.all()
+    ]
 
 
 @router.post("/alumni/{user_id}/approve", response_model=UserResponse)
@@ -225,7 +259,7 @@ async def approve_post(
     author = author_result.scalar_one()
     return PostResponse(
         id=post.id, author_id=author.id, author_name=author.full_name, author_role=author.role.value,
-        post_type=post.post_type, content=post.content, moderation_status=post.moderation_status,
+        post_type=post.post_type, content=post.content, link_url=post.link_url, moderation_status=post.moderation_status,
         created_at=post.created_at, like_count=0, comment_count=0, liked_by_me=False,
     )
 
@@ -251,6 +285,6 @@ async def reject_post(
     author = author_result.scalar_one()
     return PostResponse(
         id=post.id, author_id=author.id, author_name=author.full_name, author_role=author.role.value,
-        post_type=post.post_type, content=post.content, moderation_status=post.moderation_status,
+        post_type=post.post_type, content=post.content, link_url=post.link_url, moderation_status=post.moderation_status,
         created_at=post.created_at, like_count=0, comment_count=0, liked_by_me=False,
     )

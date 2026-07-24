@@ -26,7 +26,7 @@ export default function MyRequests() {
 
   return (
     <Layout>
-      <div className="max-w-2xl">
+      <div className="max-w-2xl mx-auto">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">My Requests</h2>
 
         <div className="flex gap-1 mb-6 border-b border-gray-200">
@@ -69,13 +69,29 @@ export default function MyRequests() {
               {r.message && (
                 <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 italic">"{r.message}"</p>
               )}
-              {r.status === "accepted" && r.window_id && (
+              {r.status === "rejected" && (
+                <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg p-3 mt-2">
+                  <span className="font-medium">Alumnus's note: </span>
+                  {r.rejection_reason || "No reason given."}
+                </p>
+              )}
+              {r.status === "accepted" && r.window_id && r.window_status === "active" && (
                 <Link
                   to={`/student/window/${r.window_id}`}
                   className="mt-3 inline-block px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
                 >
                   Book your session →
                 </Link>
+              )}
+              {r.status === "accepted" && r.window_status === "booked" && (
+                <span className="mt-3 inline-flex items-center gap-1 px-3 py-2 text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg">
+                  ✓ Session booked
+                </span>
+              )}
+              {r.status === "accepted" && r.window_status === "expired" && (
+                <span className="mt-3 inline-block px-3 py-2 text-sm text-gray-400 bg-gray-50 border border-gray-100 rounded-lg">
+                  Booking window expired without a session being booked.
+                </span>
               )}
               {r.status === "accepted" && (
                 <>

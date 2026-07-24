@@ -10,6 +10,7 @@ export default function UserManagement() {
   const [users, setUsers] = useState([]);
   const [role, setRole] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [confirmingBanId, setConfirmingBanId] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -20,14 +21,14 @@ export default function UserManagement() {
   useEffect(load, [role]);
 
   const ban = async (id) => {
-    if (!window.confirm("Ban this user?")) return;
     await api.patch(`/api/v1/admin/users/${id}/ban`);
+    setConfirmingBanId(null);
     load();
   };
 
   return (
     <Layout>
-      <div className="max-w-5xl">
+      <div className="max-w-5xl mx-auto">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">User Management</h2>
 
         <div className="flex gap-1 mb-4 border-b border-gray-200">
@@ -71,8 +72,15 @@ export default function UserManagement() {
                   <td className="px-4 py-3"><StatusBadge status={u.verification_status} /></td>
                   <td className="px-4 py-3 text-gray-400">{format(new Date(u.created_at), "MMM d, yyyy")}</td>
                   <td className="px-4 py-3">
-                    {u.status !== "banned" && (
-                      <button onClick={() => ban(u.id)} className="text-xs text-red-500 hover:text-red-700">Ban</button>
+                    {u.status !== "banned" && confirmingBanId === u.id && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Ban {u.full_name || u.email}?</span>
+                        <button onClick={() => ban(u.id)} className="text-xs font-medium text-red-600 hover:text-red-800">Confirm</button>
+                        <button onClick={() => setConfirmingBanId(null)} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+                      </div>
+                    )}
+                    {u.status !== "banned" && confirmingBanId !== u.id && (
+                      <button onClick={() => setConfirmingBanId(u.id)} className="text-xs text-red-500 hover:text-red-700">Ban</button>
                     )}
                   </td>
                 </tr>

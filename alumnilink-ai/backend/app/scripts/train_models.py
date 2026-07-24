@@ -18,10 +18,28 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 import joblib
 import os
 
 MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "models")
+
+
+def _report(name: str, y_test, y_pred) -> None:
+    """
+    Standard classification eval — printed at train time so the numbers are
+    visible/reproducible, not just claimed. With a dataset this small (~20-30
+    rows total, so a handful of test rows), treat these as a demonstration of
+    the *methodology* (holdout evaluation), not a statistically reliable
+    estimate of real-world accuracy — say so if asked, don't oversell it.
+    """
+    print(f"\n--- {name}: holdout test-set evaluation ---")
+    print(f"  test set size: {len(y_test)} rows")
+    print(f"  accuracy:  {accuracy_score(y_test, y_pred):.2f}")
+    print(f"  precision: {precision_score(y_test, y_pred, zero_division=0):.2f}")
+    print(f"  recall:    {recall_score(y_test, y_pred, zero_division=0):.2f}")
+    print(f"  f1:        {f1_score(y_test, y_pred, zero_division=0):.2f}")
+    print(f"  confusion matrix [[TN FP] [FN TP]]:\n{confusion_matrix(y_test, y_pred)}")
 
 
 def train_response_model():
@@ -62,6 +80,22 @@ def train_response_model():
             "experience_years"]]
     y = df["accepted"]
 
+    # Holdout evaluation: fit on train, score on test the model never saw.
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+    eval_scaler = StandardScaler()
+    X_train_scaled = eval_scaler.fit_transform(X_train)
+    X_test_scaled = eval_scaler.transform(X_test)
+    eval_model = LogisticRegression(random_state=42)
+    eval_model.fit(X_train_scaled, y_train)
+    _report("Response model (LogisticRegression)", y_test, eval_model.predict(X_test_scaled))
+    print("  coefficients (screening_score, match_score, experience_years):",
+          np.round(eval_model.coef_[0], 3))
+
+    # Deployed model: refit on 100% of the data (standard practice once the
+    # holdout above has validated the approach — more data generally helps,
+    # and this is what actually ships and serves predictions).
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
@@ -103,6 +137,21 @@ def train_completion_model():
             "experience_years","session_hour"]]
     y = df["completed"]
 
+    # Holdout evaluation: fit on train, score on test the model never saw.
+    # Note: this label is heavily imbalanced (17 completed / 3 not, out of
+    # 20 rows) — expect the minority-class precision/recall to be noisy or
+    # zero on such a tiny test split; that's a real limitation of the
+    # synthetic dataset size, not hidden by reporting it.
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+    eval_model = RandomForestClassifier(n_estimators=10, random_state=42)
+    eval_model.fit(X_train, y_train)
+    _report("Completion model (RandomForestClassifier)", y_test, eval_model.predict(X_test))
+    print("  feature importances (match_score, screening_score, experience_years, session_hour):",
+          np.round(eval_model.feature_importances_, 3))
+
+    # Deployed model: refit on 100% of the data — see same note above.
     model = RandomForestClassifier(
         n_estimators=10, random_state=42
     )

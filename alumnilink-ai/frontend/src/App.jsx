@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import useAuthStore from "./store/authStore";
 
@@ -42,6 +43,26 @@ function ProtectedRoute({ children, allowedRoles, requireVerified }) {
 }
 
 export default function App() {
+  const { isAuthenticated, fetchMe, logout } = useAuthStore();
+
+  useEffect(() => {
+    // The user object (role, verification_status, etc.) is only ever fetched
+    // at login/register time and persisted to localStorage — an admin
+    // approving/rejecting/banning elsewhere never pushes to this browser.
+    // Refresh it on every full page load so status changes actually show up.
+    if (isAuthenticated) {
+      fetchMe().then((user) => {
+        // Rejection is now a hard block (same tier as a ban) — the backend
+        // already refuses this account on its next login/request, so don't
+        // leave them sitting in a half-working session in this tab either.
+        if (user?.role === "alumni" && user?.verification_status === "rejected") {
+          logout();
+        }
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <BrowserRouter>
       <Routes>

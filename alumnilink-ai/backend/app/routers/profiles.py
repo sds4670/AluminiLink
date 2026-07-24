@@ -110,9 +110,13 @@ async def create_alumni_profile(
     current_user: User = Depends(require_alumni),
     db: AsyncSession = Depends(get_db),
 ):
-    if current_user.verification_status != VerificationStatus.verified:
-        raise HTTPException(status_code=403, detail="Alumni account must be verified before creating a profile")
-
+    # Deliberately NOT gated on verification_status: a pending alumnus needs to
+    # be able to fill this in so an admin has real, substantive information
+    # (company, role, background) to actually verify against — not just the
+    # register_number match already checked at registration. Verification
+    # still gates the things that expose them to students: matching only
+    # surfaces verified alumni (matching_service.get_verified_alumni_with_embeddings),
+    # and availability/feed participation are separately gated elsewhere.
     existing = await db.execute(select(AlumniProfile).where(AlumniProfile.user_id == current_user.id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Profile already exists")

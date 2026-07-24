@@ -4,9 +4,11 @@ import Layout from "../../components/layout/Layout";
 import AlumniCard from "../../components/cards/AlumniCard";
 import PostCard from "../../components/cards/PostCard";
 import api from "../../api/axios";
+import { isRequestStillBlocking } from "../../utils";
 
 export default function StudentDashboard() {
   const [topAlumni, setTopAlumni] = useState([]);
+  const [requestStatusByAlumni, setRequestStatusByAlumni] = useState({});
   const [stats, setStats] = useState({ recommended: 0, pending: 0, upcoming: 0, completed: 0 });
   const [feedPreview, setFeedPreview] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,6 +21,13 @@ export default function StudentDashboard() {
       api.get("/api/v1/feed/posts", { params: { limit: 3 } }).catch(() => ({ data: [] })),
     ]).then(([alumniRes, reqRes, sesRes, feedRes]) => {
       setTopAlumni(alumniRes.data.slice(0, 3));
+      const statusMap = {};
+      reqRes.data.forEach((r) => {
+        if (isRequestStillBlocking(r)) {
+          statusMap[r.alumni_user_id] = r.status;
+        }
+      });
+      setRequestStatusByAlumni(statusMap);
       setStats({
         recommended: alumniRes.data.length,
         pending: reqRes.data.filter((r) => r.status === "pending").length,
@@ -38,7 +47,7 @@ export default function StudentDashboard() {
 
   return (
     <Layout>
-      <div className="max-w-4xl">
+      <div className="max-w-4xl mx-auto">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">Student Dashboard</h2>
 
         <div className="grid grid-cols-4 gap-4 mb-8">
@@ -61,7 +70,9 @@ export default function StudentDashboard() {
               <p className="text-gray-400 text-sm">Complete your profile to get matched with alumni.</p>
             )}
             <div className="space-y-3">
-              {topAlumni.map((a) => <AlumniCard key={a.user_id} alumni={a} />)}
+              {topAlumni.map((a) => (
+                <AlumniCard key={a.user_id} alumni={a} requestStatus={requestStatusByAlumni[a.user_id] || null} />
+              ))}
             </div>
           </div>
 

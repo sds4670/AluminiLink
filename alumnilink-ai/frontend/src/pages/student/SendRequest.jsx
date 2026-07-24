@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Layout from "../../components/layout/Layout";
 import api from "../../api/axios";
+import { getErrorMessage, isRequestStillBlocking } from "../../utils";
 
 const DIMENSION_LABELS = {
   intent: "Intent",
@@ -35,9 +36,19 @@ export default function SendRequest() {
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [blockedStatus, setBlockedStatus] = useState(null);
 
   useEffect(() => {
-    api.get(`/api/v1/profiles/alumni/${alumniId}`).then((res) => setAlumni(res.data));
+    Promise.all([
+      api.get(`/api/v1/profiles/alumni/${alumniId}`),
+      api.get("/api/v1/requests/my").catch(() => ({ data: [] })),
+    ]).then(([profileRes, reqRes]) => {
+      setAlumni(profileRes.data);
+      const existing = reqRes.data.find(
+        (r) => r.alumni_user_id === Number(alumniId) && isRequestStillBlocking(r)
+      );
+      setBlockedStatus(existing?.status || null);
+    });
   }, [alumniId]);
 
   const wordCount = message.trim() ? message.trim().split(/\s+/).length : 0;
@@ -49,7 +60,7 @@ export default function SendRequest() {
       const res = await api.post("/api/v1/screener/check", { message });
       setScreener(res.data);
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to check message.");
+      setError(getErrorMessage(err, "Failed to check message."));
     } finally {
       setChecking(false);
     }
@@ -64,11 +75,11 @@ export default function SendRequest() {
       navigate("/student/requests");
     } catch (err) {
       const detail = err.response?.data?.detail;
-      if (detail && typeof detail === "object" && "breakdown" in detail) {
+      if (detail && typeof detail === "object" && !Array.isArray(detail) && "breakdown" in detail) {
         setScreener(detail);
         setError("Message did not pass screening — see feedback below.");
       } else {
-        setError(detail || "Failed to send request.");
+        setError(getErrorMessage(err, "Failed to send request."));
       }
     } finally {
       setSubmitting(false);
@@ -79,7 +90,7 @@ export default function SendRequest() {
 
   return (
     <Layout>
-      <div className="max-w-xl">
+      <div className="max-w-xl mx-auto">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">Send Connection Request</h2>
 
         {alumni && (
@@ -93,6 +104,22 @@ export default function SendRequest() {
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>
         )}
 
+        {blockedStatus ? (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+            <p className="text-sm text-gray-700">
+              {blockedStatus === "accepted"
+                ? `You're already connected with ${alumni?.full_name || "this alumnus"}. Continue the conversation in chat instead of sending a new request.`
+                : `You already have a pending request with ${alumni?.full_name || "this alumnus"}. Wait for them to accept or reject it before sending another.`}
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate("/student/requests")}
+              className="mt-4 px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50"
+            >
+              {blockedStatus === "accepted" ? "Go to Chat" : "View My Requests"}
+            </button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-4">
           <div>
             <div className="flex items-center justify-between mb-1">
@@ -158,6 +185,7 @@ export default function SendRequest() {
             </button>
           </div>
         </form>
+        )}
       </div>
     </Layout>
   );
